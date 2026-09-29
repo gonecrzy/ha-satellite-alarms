@@ -1,5 +1,8 @@
 """Tests for Satellite Alarms integration setup."""
 
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
 from homeassistant.core import HomeAssistant, ServiceCall
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -25,9 +28,13 @@ async def test_setup_registers_services_and_loads_endpoint(hass: HomeAssistant) 
     for service in ("add", "edit", "remove"):
         hass.services.async_register(SCHEDULER_DOMAIN, service, _noop)
 
+    hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
+
     assert await async_setup(hass, {}) is True
     assert DATA_ALARM_MANAGER in hass.data[DOMAIN]
     assert hass.services.has_service(DOMAIN, SERVICE_CREATE)
+    hass.http.async_register_static_paths.assert_awaited_once()
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -45,3 +52,19 @@ async def test_setup_registers_services_and_loads_endpoint(hass: HomeAssistant) 
     assert hass.data[DOMAIN][DATA_RECONCILED] is True
     assert entry.runtime_data.name == "Bedroom"
     assert entry.runtime_data.media_player_entity_id == "media_player.bedroom"
+
+
+
+def test_bundled_alarm_mp3_exists() -> None:
+    """The default alarm media must be shipped with the integration."""
+    media_path = (
+        Path(__file__).parent.parent
+        / "custom_components"
+        / "assist_satellite_alarms"
+        / "media"
+        / "alarm.mp3"
+    )
+
+    assert media_path.is_file()
+    assert media_path.stat().st_size > 10_000
+    assert media_path.read_bytes()[:3] == b"ID3"
