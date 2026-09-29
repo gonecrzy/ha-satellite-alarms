@@ -9,6 +9,7 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_MEDIA_PLAYER,
     CONF_NAME,
     DATA_ALARM_MANAGER,
+    DATA_RECONCILED,
     DOMAIN,
     SCHEDULER_DOMAIN,
     SERVICE_CREATE,
@@ -41,5 +42,6 @@ async def test_setup_registers_services_and_loads_endpoint(hass: HomeAssistant) 
     entry.add_to_hass(hass)
 
     assert await async_setup_entry(hass, entry) is True
+    assert hass.data[DOMAIN][DATA_RECONCILED] is True
     assert entry.runtime_data.name == "Bedroom"
     assert entry.runtime_data.media_player_entity_id == "media_player.bedroom"
