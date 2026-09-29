@@ -203,3 +203,47 @@ async def test_manager_validation_errors(hass: HomeAssistant) -> None:
 
     with pytest.raises(AlarmNotFoundError):
         await manager.async_delete("missing")
+
+
+async def test_reconcile_scheduler_entity_mapping(hass: HomeAssistant) -> None:
+    """Stable Scheduler tags should repair cached entity IDs after restart."""
+    entry = _add_endpoint(hass)
+    manager, _ = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="07:00:00",
+        recurrence=RECURRENCE_DAILY,
+    )
+    record.scheduler_entity_id = "switch.stale"
+    await manager.registry.async_upsert(record)
+
+    actual_entity_id = "switch.schedule_recreated"
+    hass.states.async_set(
+        actual_entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2026-09-30T07:00:00-04:00",
+        },
+    )
+
+    matched, missing = await manager.async_reconcile()
+
+    assert (matched, missing) == (1, 0)
+    assert manager.registry.get(record.alarm_id).scheduler_entity_id == actual_entity_id
+
+
+async def test_reconcile_reports_missing_scheduler_schedule(hass: HomeAssistant) -> None:
+    """Reconciliation should report missing Scheduler schedules without deleting metadata."""
+    entry = _add_endpoint(hass)
+    manager, _ = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="07:00:00",
+        recurrence=RECURRENCE_DAILY,
+    )
+
+    matched, missing = await manager.async_reconcile()
+
+    assert (matched, missing) == (0, 1)
+    assert manager.registry.get(record.alarm_id) == record
