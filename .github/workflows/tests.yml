@@ -26,6 +26,11 @@ jobs:
           ref: v0.3-playback-snooze
           fetch-depth: 0
 
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Generate alarm MP3 when missing
         run: |
           if [ -f custom_components/assist_satellite_alarms/media/alarm.mp3 ]; then
