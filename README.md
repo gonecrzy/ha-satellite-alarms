@@ -15,7 +15,7 @@ The initial use case is a house with multiple voice satellites—such as EchoMus
 
 The alarm should belong to that room and ring only on that room's configured speaker.
 
-> **Project status:** Planning / initial development. This repository does not yet contain a usable integration.
+> **Project status:** v0.2 development. Endpoint configuration and Scheduler-backed alarm management are implemented. Alarm audio, stop/snooze playback control, and voice commands are not implemented yet.
 
 ## Goals
 
@@ -85,6 +85,42 @@ Services/actions provided by this integration use this namespace, for example `a
 Satellite Alarms is designed on top of [Scheduler Component](https://github.com/nielsfaber/scheduler-component). Scheduler Component owns the actual time schedules, recurrence, persistence, enable/disable state, and `next_trigger` calculation. Satellite Alarms adds the alarm-specific behavior that Scheduler Component does not provide: Assist-satellite room routing, alarm metadata, playback, volume handling, stop/snooze, and voice commands.
 
 Development begins against Scheduler Component 3.x (currently 3.3.8). The dependency will be isolated behind a scheduler adapter so it can be changed later without rewriting the alarm/voice layers.
+
+## Current v0.2 actions
+
+The v0.2 service layer provides:
+
+```text
+assist_satellite_alarms.create
+assist_satellite_alarms.update
+assist_satellite_alarms.delete
+assist_satellite_alarms.enable
+assist_satellite_alarms.disable
+assist_satellite_alarms.fire
+```
+
+Example one-time alarm:
+
+```yaml
+action: assist_satellite_alarms.create
+data:
+  endpoint_id: <Satellite Alarms config entry ID>
+  time: "06:30:00"
+  recurrence: once
+```
+
+Example weekday alarm:
+
+```yaml
+action: assist_satellite_alarms.create
+data:
+  endpoint_id: <Satellite Alarms config entry ID>
+  time: "06:30:00"
+  recurrence: weekdays
+  name: Work
+```
+
+`create` returns the stable alarm ID and Scheduler entity mapping when a response is requested. Scheduler Component owns the actual persistent schedule. The internal `fire` action currently emits a room-targeted Home Assistant event; v0.3 will connect that callback to alarm playback.
 
 ## Initial feature set
 
@@ -201,9 +237,9 @@ The internal file layout may change as the implementation develops.
 
 ## Installation
 
-Not available yet.
+There is not yet a tagged public release. For development testing, install and configure Scheduler Component first, then install this repository as a HACS custom integration and add each satellite endpoint through Home Assistant's normal integration config flow.
 
-When an installable release exists, install and configure Scheduler Component first, then install Satellite Alarms through HACS custom repository support and add each satellite endpoint through Home Assistant's normal integration config flow.
+Until v0.3, scheduled alarms can be created and triggered through Scheduler Component, but they do not yet play alarm audio.
 
 ## Contributing
 
