@@ -206,9 +206,7 @@ class AlarmManager:
         record = self._record(alarm_id)
         entity_id = record.scheduler_entity_id or self.scheduler.find_entity_id(alarm_id)
         if entity_id is None:
-            raise AlarmNotFoundError(
-                f"Scheduler entity for alarm {alarm_id} could not be found"
-            )
+            raise AlarmNotFoundError(f"Scheduler entity for alarm {alarm_id} could not be found")
         await self.scheduler.async_set_enabled(entity_id, enabled)
         record.scheduler_entity_id = entity_id
         await self.registry.async_upsert(record)
