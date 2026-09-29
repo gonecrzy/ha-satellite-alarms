@@ -46,6 +46,7 @@ The system should not require the user to say "bedroom" when the room can be inf
 8. Provide a service API independent of voice.
 9. Keep the implementation generic to Home Assistant entities.
 10. Avoid requiring an LLM for deterministic alarm operations.
+11. Use Scheduler Component as the scheduling/persistence base instead of rebuilding a scheduler.
 
 ### Secondary goals
 
@@ -71,7 +72,7 @@ The integration should not initially attempt to:
 - Implement general reminders, calendars, or task management.
 - Become a generic scheduler for all Home Assistant entities.
 - Require EchoMuse.
-- Require Scheduler Component.
+- Reimplement Scheduler Component's mature schedule persistence, recurrence, enable/disable, and next-trigger engine.
 - Require an LLM.
 - Guarantee operation while Home Assistant itself is offline.
 - Provide synchronized whole-house audio playback.
@@ -123,23 +124,31 @@ Dashboard/service -->| Satellite Alarms     |<-- Automation / LLM tool
                       | service API          |
                       +----------+-----------+
                                  |
-                 +---------------+----------------+
-                 |                                |
-                 v                                v
-        +------------------+            +------------------+
-        | Alarm Store      |            | Alarm Manager    |
-        | persistent data  |            | lifecycle/state  |
-        +--------+---------+            +---------+--------+
-                 |                                |
-                 +---------------+----------------+
+                  +--------------+---------------+
+                  |                              |
+                  v                              v
+        +-------------------+          +-------------------+
+        | Alarm Registry    |          | Alarm Manager     |
+        | metadata/mapping  |          | lifecycle/state   |
+        +---------+---------+          +---------+---------+
+                  |                              |
+                  +--------------+---------------+
                                  |
                                  v
-                       +------------------+
-                       | Scheduler        |
-                       | HA time helpers  |
-                       +--------+---------+
-                                |
-                                v
+                      +-----------------------+
+                      | Scheduler Adapter     |
+                      +-----------+-----------+
+                                  |
+                                  v
+                      +-----------------------+
+                      | Scheduler Component   |
+                      | schedules/persistence |
+                      | recurrence/next time  |
+                      +-----------+-----------+
+                                  |
+                            scheduled action
+                                  |
+                                  v
                        +------------------+
                        | Playback Manager |
                        +--------+---------+
@@ -155,6 +164,8 @@ Dashboard/service -->| Satellite Alarms     |<-- Automation / LLM tool
 
 The voice layer should call the same alarm-management API used by services and dashboards. Voice behavior must not contain a separate scheduling implementation.
 
+Scheduler Component is a required runtime dependency for the initial architecture. Satellite Alarms should interact with it through a dedicated adapter rather than spreading Scheduler-specific calls through the codebase. This keeps room routing, voice logic, playback, and alarm state independent from the scheduling backend.
+
 ---
 
 ## 6. Proposed repository layout
@@ -168,8 +179,8 @@ custom_components/
     ├── const.py
     ├── coordinator.py
     ├── models.py
-    ├── storage.py
-    ├── scheduler.py
+    ├── registry.py
+    ├── scheduler_adapter.py
     ├── alarm_manager.py
     ├── playback.py
     ├── intent.py
@@ -326,42 +337,89 @@ For recurring alarms, `completed` means the current occurrence completed and the
 
 ---
 
-## 10. Scheduling engine
+## 10. Scheduler Component base
 
-The integration should use Home Assistant's native event/time scheduling helpers rather than requiring another custom scheduler.
+Scheduler Component is the scheduling engine for the initial implementation.
 
-Responsibilities:
+It already provides:
 
-- Calculate next trigger.
-- Register/cancel callbacks.
-- Re-register alarms after Home Assistant restart.
-- Recalculate recurring alarms after an occurrence.
-- Handle timezone and daylight-saving changes using Home Assistant's configured timezone.
-- Keep persistent alarm data separate from in-memory callback handles.
+- persistent schedule storage
+- scheduler `switch` entities
+- `next_trigger`
+- enable/disable behavior
+- one-time schedules using `repeat_type: single`
+- repeating schedules
+- weekday/workday/weekend selection
+- start/end dates
+- `scheduler.add`, `scheduler.edit`, and `scheduler.remove` actions
+
+Satellite Alarms should therefore store only alarm-specific metadata that Scheduler Component does not own, such as the alarm UUID, endpoint association, display name, playback settings, and the corresponding Scheduler entity ID.
+
+### Scheduler adapter
+
+All Scheduler-specific interaction belongs behind `scheduler_adapter.py`.
+
+The adapter will be responsible for:
+
+- validating that Scheduler Component is installed and configured
+- creating a Scheduler schedule for an alarm
+- finding and recording the created Scheduler entity
+- editing/removing the Scheduler schedule
+- enabling/disabling schedules
+- reading `next_trigger`
+- translating Satellite Alarms recurrence values to Scheduler Component's format
+- insulating the rest of the integration from Scheduler Component implementation details
+
+### Proposed Scheduler action
+
+A Scheduler timeslot should call back into Satellite Alarms rather than directly playing media.
+
+Conceptually:
+
+```yaml
+weekdays:
+  - workday
+timeslots:
+  - start: "06:30"
+    actions:
+      - service: satellite_alarms.fire
+        entity_id: media_player.bedroom_voice_assistant
+        service_data:
+          alarm_id: <stable-alarm-uuid>
+repeat_type: repeat
+```
+
+The exact payload will be finalized in v0.2 against Scheduler Component's current service schema.
+
+### One-time alarms
+
+A one-time alarm will use:
+
+- the target date as `start_date` and `end_date`
+- the requested time as the timeslot `start`
+- `repeat_type: single`
+
+This lets Scheduler Component remove the schedule after it fires.
+
+### Recurring alarms
+
+Initial mappings:
+
+```text
+daily     -> daily
+weekdays  -> workday
+weekends  -> weekend
+```
+
+Selected weekday lists are planned for a later version.
 
 ### Restart behavior
 
-On startup:
-
-1. Load stored alarms.
-2. Validate endpoint references.
-3. Recalculate `next_trigger`.
-4. Register future alarms.
-5. Restore state without duplicating already-completed one-time alarms.
+Scheduler Component owns schedule persistence and reconstruction after Home Assistant restarts. Satellite Alarms reloads its metadata registry, reconciles stored alarm records with Scheduler entities, and marks missing/orphaned mappings for repair rather than silently recreating duplicates.
 
 ### Missed alarms
 
-Early versions should **not silently fire every missed alarm after a long Home Assistant outage**.
-
-Proposed later option:
-
-```text
-missed_alarm_grace_period
-```
-
-Example: if HA restarts within 2 minutes of the intended trigger, the alarm may still ring. Otherwise it is marked missed and the next recurring occurrence is calculated.
-
-This behavior must be explicit and configurable before v1.0.
+Scheduler Component already contains restart/shutdown handling. Satellite Alarms should not add a second independent missed-alarm scheduler. Any alarm-specific grace/fallback behavior will be implemented only after Scheduler behavior is tested with the supported version.
 
 ---
 
@@ -636,18 +694,42 @@ Configuration should be editable without deleting stored alarms.
 
 ## 19. Persistence and migrations
 
-Alarm data should use Home Assistant-supported persistent storage mechanisms.
+Persistence is split between two owners.
+
+### Scheduler Component
+
+Scheduler Component is the source of truth for:
+
+- execution time
+- recurrence
+- enabled/disabled schedule state
+- Scheduler switch entity
+- next trigger
+- actual persistent schedule definition
+
+### Satellite Alarms registry
+
+Satellite Alarms persists only its own metadata:
+
+- stable alarm UUID
+- endpoint/config-entry association
+- Scheduler entity ID
+- alarm name
+- playback overrides
+- snooze/ringing metadata that is not represented by Scheduler Component
 
 Requirements before v1.0:
 
-- storage schema version
+- registry storage schema version
 - migration support
 - stable alarm IDs
+- reconciliation with Scheduler entities after restart
 - safe handling of removed endpoints
-- no duplicate alarms after restart
-- no silent loss of recurrence information
+- detection of orphaned Scheduler schedules
+- no duplicate schedules after restart
+- no silent loss of endpoint/alarm metadata
 
-A stored alarm should not depend on entity display names.
+The integration must not copy Scheduler Component's full schedule data into a second competing source of truth.
 
 ---
 
@@ -708,18 +790,21 @@ Repeat/loop behavior may differ by media player. The playback manager should pre
 
 ### v0.1 restrictions
 
+- Scheduler Component must already be installed and configured.
 - No alarm ringing yet.
 - No voice commands.
-- Configuration and persistence only.
+- Endpoint configuration and alarm metadata registry only.
+- Scheduler adapter validates the dependency but does not yet create user alarms.
 - One media player per endpoint.
 
 ### v0.2 restrictions
 
 - One-time, daily, weekdays, weekends only.
 - Services/API first.
+- Schedules are created/edited/removed through Scheduler Component.
 - No voice commands.
 - No advanced recurrence.
-- Basic next-trigger reporting.
+- Basic next-trigger reporting comes from the Scheduler entity.
 
 ### v0.3 restrictions
 
@@ -761,35 +846,40 @@ Deliverables:
 
 - HACS-compatible custom integration skeleton.
 - Manifest and translations.
-- Config flow.
-- Endpoint configuration.
-- Persistent storage abstraction.
-- Alarm data model.
+- Required Scheduler Component dependency.
+- Config flow for satellite/media-player endpoints.
+- Endpoint configuration and defaults.
+- Versioned alarm metadata registry.
+- Scheduler adapter with dependency/readiness validation.
 - Basic diagnostics/logging.
 
 Success criteria:
 
 - Multiple satellite endpoints can be configured.
+- Duplicate satellite endpoints are rejected.
+- Scheduler Component absence/not-ready state is reported clearly.
 - Configuration survives restart.
-- Alarm objects can be stored/reloaded without scheduling.
+- Alarm metadata can be stored/reloaded without creating schedules.
 
-### v0.2 — Scheduler
+### v0.2 — Scheduler-backed alarms
 
 Deliverables:
 
-- Native HA scheduling engine.
-- Create/update/delete/enable/disable services.
+- Scheduler adapter create/edit/remove/enable/disable operations.
+- Satellite Alarms create/update/delete/enable/disable actions.
 - One-time alarms.
 - Daily alarms.
 - Weekday/weekend alarms.
-- Next-trigger calculation.
-- Restart rescheduling.
+- Scheduler entity mapping.
+- Next-trigger reporting from Scheduler Component.
+- Registry/Scheduler reconciliation after restart.
 
 Success criteria:
 
-- Service-created alarms trigger internal callbacks at correct local times.
-- Recurring alarms compute the next occurrence correctly.
-- Restart does not duplicate schedules.
+- Service-created alarms create Scheduler Component schedules.
+- The Scheduler schedule calls back into the correct Satellite Alarm ID.
+- Recurring alarms use Scheduler Component recurrence correctly.
+- Restart does not duplicate schedules or alarm metadata.
 
 ### v0.3 — Ringing, stop, and snooze
 
@@ -930,7 +1020,7 @@ Other Home Assistant alarm projects demonstrate useful patterns worth adopting c
 - dashboard visibility
 - persistent schedules
 
-Satellite Alarms should implement these against its own architecture rather than depending on another alarm integration's internal data model.
+Scheduler Component is an intentional runtime dependency and provides the schedule engine. Ideas from alarm-specific projects should be implemented in Satellite Alarms' own alarm/voice/playback layers rather than depending on those projects' internal data models.
 
 The differentiating feature is **satellite-aware room ownership** as a first-class concept.
 
@@ -986,13 +1076,14 @@ At minimum, development should test:
 These should be resolved through implementation/testing rather than guessed up front:
 
 1. Best Home Assistant API path for receiving originating Assist satellite context inside a custom integration.
-2. Best generic method for repeating alarm audio across different media-player platforms.
-3. Whether to restore prior media playback in addition to volume.
-4. Exact missed-alarm grace behavior after HA restart.
-5. How alarm entities should be represented without creating entity clutter.
-6. Whether pre/post actions should be scripts, generic actions, or events.
-7. Whether alarm audio should use `media_player.play_media`, `assist_satellite.announce`, or a configurable playback strategy.
-8. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
+2. Most stable way to identify the Scheduler entity created by `scheduler.add` without tightly coupling to Scheduler Component internals.
+3. Best generic method for repeating alarm audio across different media-player platforms.
+4. Whether to restore prior media playback in addition to volume.
+5. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
+6. How alarm entities should be represented without creating entity clutter.
+7. Whether pre/post actions should be scripts, generic actions, or events.
+8. Whether alarm audio should use `media_player.play_media`, `assist_satellite.announce`, or a configurable playback strategy.
+9. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
 
 ---
 
