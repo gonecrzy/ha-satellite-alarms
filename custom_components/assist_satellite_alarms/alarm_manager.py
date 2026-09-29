@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
+import logging
 from uuid import uuid4
 
 from homeassistant.core import HomeAssistant
@@ -19,6 +20,8 @@ from .const import (
 from .models import AlarmEndpoint, AlarmRecord
 from .registry import AlarmRegistry
 from .scheduler_adapter import SchedulerAdapter
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class AlarmNotFoundError(ValueError):
@@ -203,14 +206,45 @@ class AlarmManager:
 
     async def async_set_enabled(self, alarm_id: str, enabled: bool) -> AlarmRecord:
         """Enable or disable an alarm."""
-        record = self._record(alarm_id)
-        entity_id = record.scheduler_entity_id or self.scheduler.find_entity_id(alarm_id)
-        if entity_id is None:
-            raise AlarmNotFoundError(f"Scheduler entity for alarm {alarm_id} could not be found")
-        await self.scheduler.async_set_enabled(entity_id, enabled)
-        record.scheduler_entity_id = entity_id
-        await self.registry.async_upsert(record)
-        return record
+        async with self._lock:
+            record = self._record(alarm_id)
+            entity_id = record.scheduler_entity_id or self.scheduler.find_entity_id(alarm_id)
+            if entity_id is None:
+                raise AlarmNotFoundError(
+                    f"Scheduler entity for alarm {alarm_id} could not be found"
+                )
+            await self.scheduler.async_set_enabled(entity_id, enabled)
+            record.scheduler_entity_id = entity_id
+            await self.registry.async_upsert(record)
+            return record
+
+    async def async_reconcile(self) -> tuple[int, int]:
+        """Reconcile cached Scheduler entity IDs using stable alarm tags."""
+        matched = 0
+        missing = 0
+        changed = False
+
+        async with self._lock:
+            for record in self.registry.all():
+                entity_id = self.scheduler.find_entity_id(record.alarm_id)
+                if entity_id is None:
+                    missing += 1
+                    _LOGGER.warning(
+                        "Scheduler schedule for alarm %s (%s) was not found",
+                        record.alarm_id,
+                        record.name,
+                    )
+                    continue
+
+                matched += 1
+                if record.scheduler_entity_id != entity_id:
+                    record.scheduler_entity_id = entity_id
+                    changed = True
+
+            if changed:
+                await self.registry.async_save()
+
+        return matched, missing
 
     def response(self, record: AlarmRecord) -> dict[str, object]:
         """Build a service response for an alarm."""
