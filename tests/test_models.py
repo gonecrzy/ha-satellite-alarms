@@ -2,14 +2,14 @@
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.satellite_alarms.const import (
+from custom_components.assist_satellite_alarms.const import (
     CONF_AREA_ID,
     CONF_ASSIST_SATELLITE,
     CONF_MEDIA_PLAYER,
     CONF_NAME,
     DOMAIN,
 )
-from custom_components.satellite_alarms.models import AlarmEndpoint, AlarmRecord
+from custom_components.assist_satellite_alarms.models import AlarmEndpoint, AlarmRecord
 
 
 def test_alarm_record_round_trip() -> None:

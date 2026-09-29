@@ -1,5 +1,5 @@
 {
-  "domain": "satellite_alarms",
+  "domain": "assist_satellite_alarms",
   "name": "Satellite Alarms",
   "codeowners": [
     "@gonecrzy"

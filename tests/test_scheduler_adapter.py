@@ -3,8 +3,8 @@
 import pytest
 from homeassistant.core import HomeAssistant, ServiceCall
 
-from custom_components.satellite_alarms.const import SCHEDULER_DOMAIN
-from custom_components.satellite_alarms.scheduler_adapter import (
+from custom_components.assist_satellite_alarms.const import SCHEDULER_DOMAIN
+from custom_components.assist_satellite_alarms.scheduler_adapter import (
     SchedulerAdapter,
     SchedulerNotReadyError,
 )

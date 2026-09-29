@@ -2,7 +2,7 @@
 
 from typing import Final
 
-DOMAIN: Final = "satellite_alarms"
+DOMAIN: Final = "assist_satellite_alarms"
 SCHEDULER_DOMAIN: Final = "scheduler"
 
 CONF_NAME: Final = "name"

@@ -74,6 +74,12 @@ assist_satellite.bedroom_voice_assistant
 
 The design is intentionally generic. EchoMuse satellites are a primary development target, but the integration should work with other Home Assistant voice satellites and compatible media players.
 
+## Integration domain
+
+The Home Assistant integration domain is `assist_satellite_alarms`. The project and UI display name remain **Satellite Alarms**.
+
+Services/actions provided by this integration use this namespace, for example `assist_satellite_alarms.create`, `assist_satellite_alarms.stop`, and `assist_satellite_alarms.snooze`.
+
 ## Required dependency
 
 Satellite Alarms is designed on top of [Scheduler Component](https://github.com/nielsfaber/scheduler-component). Scheduler Component owns the actual time schedules, recurrence, persistence, enable/disable state, and `next_trigger` calculation. Satellite Alarms adds the alarm-specific behavior that Scheduler Component does not provide: Assist-satellite room routing, alarm metadata, playback, volume handling, stop/snooze, and voice commands.
@@ -172,7 +178,7 @@ Planned structure:
 
 ```text
 custom_components/
-  satellite_alarms/
+  assist_satellite_alarms/
     __init__.py
     manifest.json
     config_flow.py
