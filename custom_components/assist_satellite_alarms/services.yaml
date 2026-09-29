@@ -1,0 +1,113 @@
+create:
+  name: Create alarm
+  description: Create a Scheduler-backed alarm for a configured Assist satellite endpoint.
+  fields:
+    endpoint_id:
+      name: Endpoint
+      required: true
+      selector:
+        config_entry:
+          integration: assist_satellite_alarms
+    time:
+      name: Time
+      required: true
+      selector:
+        time:
+    recurrence:
+      name: Recurrence
+      default: once
+      selector:
+        select:
+          options:
+            - label: One time
+              value: once
+            - label: Daily
+              value: daily
+            - label: Weekdays
+              value: weekdays
+            - label: Weekends
+              value: weekends
+    date:
+      name: Date
+      description: Optional date for a one-time alarm. If omitted, the next occurrence of the requested time is used.
+      selector:
+        date:
+    name:
+      name: Name
+      selector:
+        text:
+
+update:
+  name: Update alarm
+  description: Update an existing Satellite Alarm.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      required: true
+      selector:
+        text:
+    time:
+      name: Time
+      selector:
+        time:
+    recurrence:
+      name: Recurrence
+      selector:
+        select:
+          options:
+            - label: One time
+              value: once
+            - label: Daily
+              value: daily
+            - label: Weekdays
+              value: weekdays
+            - label: Weekends
+              value: weekends
+    date:
+      name: Date
+      selector:
+        date:
+    name:
+      name: Name
+      selector:
+        text:
+
+delete:
+  name: Delete alarm
+  description: Delete an alarm and its Scheduler Component schedule.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      required: true
+      selector:
+        text:
+
+enable:
+  name: Enable alarm
+  description: Enable an existing alarm.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      required: true
+      selector:
+        text:
+
+disable:
+  name: Disable alarm
+  description: Disable an existing alarm without deleting it.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      required: true
+      selector:
+        text:
+
+fire:
+  name: Trigger alarm
+  description: Internal action used by Scheduler Component when an alarm becomes due.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      required: true
+      selector:
+        text:

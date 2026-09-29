@@ -370,26 +370,28 @@ The adapter will be responsible for:
 - translating Satellite Alarms recurrence values to Scheduler Component's format
 - insulating the rest of the integration from Scheduler Component implementation details
 
-### Proposed Scheduler action
+### Scheduler callback action
 
-A Scheduler timeslot should call back into Satellite Alarms rather than directly playing media.
+v0.2 uses a stable alarm UUID and a Scheduler tag of `assist_satellite_alarms:<alarm_id>`. Scheduler schedules use an immutable internal name so the Scheduler switch entity can be predicted without using the user-facing alarm name.
 
-Conceptually:
+A weekday schedule is represented as:
 
 ```yaml
 weekdays:
   - workday
 timeslots:
-  - start: "06:30"
+  - start: "06:30:00"
     actions:
       - service: assist_satellite_alarms.fire
-        entity_id: media_player.bedroom_voice_assistant
         service_data:
           alarm_id: <stable-alarm-uuid>
 repeat_type: repeat
+tags:
+  - assist_satellite_alarms
+  - assist_satellite_alarms:<stable-alarm-uuid>
 ```
 
-The exact payload will be finalized in v0.2 against Scheduler Component's current service schema.
+The `fire` action resolves the owning Satellite Alarms endpoint and emits the target Assist satellite and media player. v0.3 will use that callback to start playback.
 
 ### One-time alarms
 
@@ -709,14 +711,17 @@ Scheduler Component is the source of truth for:
 
 ### Satellite Alarms registry
 
-Satellite Alarms persists only its own metadata:
+Satellite Alarms persists only its own management metadata:
 
 - stable alarm UUID
 - endpoint/config-entry association
-- Scheduler entity ID
+- cached Scheduler entity ID
 - alarm name
+- normalized requested time/recurrence/date needed to edit the Scheduler schedule
 - playback overrides
 - snooze/ringing metadata that is not represented by Scheduler Component
+
+Scheduler Component remains the execution source of truth. Satellite Alarms does not duplicate Scheduler timeslots, conditions, enabled state, internal schedule ID, or next-trigger calculation.
 
 Requirements before v1.0:
 
@@ -880,6 +885,20 @@ Success criteria:
 - The Scheduler schedule calls back into the correct Satellite Alarm ID.
 - Recurring alarms use Scheduler Component recurrence correctly.
 - Restart does not duplicate schedules or alarm metadata.
+
+#### v0.2 implementation status
+
+Implemented in the v0.2 development branch:
+
+- create/update/delete/enable/disable service actions
+- one-time, daily, weekday, and weekend translation
+- stable UUID and Scheduler tag mapping
+- service responses with alarm/Scheduler IDs
+- `assist_satellite_alarms.fire` callback and room-targeted event data
+- registry rollback on Scheduler create failure
+- restart reconciliation of cached Scheduler entity IDs by stable tag
+
+Playback remains intentionally deferred to v0.3.
 
 ### v0.3 — Ringing, stop, and snooze
 
@@ -1076,14 +1095,13 @@ At minimum, development should test:
 These should be resolved through implementation/testing rather than guessed up front:
 
 1. Best Home Assistant API path for receiving originating Assist satellite context inside a custom integration.
-2. Most stable way to identify the Scheduler entity created by `scheduler.add` without tightly coupling to Scheduler Component internals.
-3. Best generic method for repeating alarm audio across different media-player platforms.
-4. Whether to restore prior media playback in addition to volume.
-5. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
-6. How alarm entities should be represented without creating entity clutter.
-7. Whether pre/post actions should be scripts, generic actions, or events.
-8. Whether alarm audio should use `media_player.play_media`, `assist_satellite.announce`, or a configurable playback strategy.
-9. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
+2. Best generic method for repeating alarm audio across different media-player platforms.
+3. Whether to restore prior media playback in addition to volume.
+4. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
+5. How alarm entities should be represented without creating entity clutter.
+6. Whether pre/post actions should be scripts, generic actions, or events.
+7. Whether alarm audio should use `media_player.play_media`, `assist_satellite.announce`, or a configurable playback strategy.
+8. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
 
 ---
 
