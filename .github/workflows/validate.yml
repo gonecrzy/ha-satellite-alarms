@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run Hassfest
         uses: home-assistant/actions/hassfest@f6f29a7ee3fa0eccadf3620a7b9ee00ab54ec03b
@@ -33,3 +33,6 @@ jobs:
         uses: hacs/action@dcb30e72781db3f207d5236b861172774ab0b485
         with:
           category: integration
+          # These are repository-publication metadata, not integration code
+          # checks. Remove the ignores before requesting HACS default inclusion.
+          ignore: "brands license description topics"
