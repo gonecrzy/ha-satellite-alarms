@@ -2,8 +2,8 @@
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.satellite_alarms.models import AlarmRecord
-from custom_components.satellite_alarms.registry import AlarmRegistry
+from custom_components.assist_satellite_alarms.models import AlarmRecord
+from custom_components.assist_satellite_alarms.registry import AlarmRegistry
 
 
 async def test_registry_persists_alarm_records(hass: HomeAssistant) -> None:

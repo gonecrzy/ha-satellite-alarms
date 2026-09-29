@@ -172,7 +172,7 @@ Scheduler Component is a required runtime dependency for the initial architectur
 
 ```text
 custom_components/
-└── satellite_alarms/
+└── assist_satellite_alarms/
     ├── __init__.py
     ├── manifest.json
     ├── config_flow.py
@@ -382,7 +382,7 @@ weekdays:
 timeslots:
   - start: "06:30"
     actions:
-      - service: satellite_alarms.fire
+      - service: assist_satellite_alarms.fire
         entity_id: media_player.bedroom_voice_assistant
         service_data:
           alarm_id: <stable-alarm-uuid>
@@ -613,15 +613,15 @@ The integration should expose services before advanced voice functionality so be
 Proposed services:
 
 ```text
-satellite_alarms.create
-satellite_alarms.update
-satellite_alarms.delete
-satellite_alarms.enable
-satellite_alarms.disable
-satellite_alarms.stop
-satellite_alarms.snooze
-satellite_alarms.skip_next
-satellite_alarms.test
+assist_satellite_alarms.create
+assist_satellite_alarms.update
+assist_satellite_alarms.delete
+assist_satellite_alarms.enable
+assist_satellite_alarms.disable
+assist_satellite_alarms.stop
+assist_satellite_alarms.snooze
+assist_satellite_alarms.skip_next
+assist_satellite_alarms.test
 ```
 
 Possible create payload:
