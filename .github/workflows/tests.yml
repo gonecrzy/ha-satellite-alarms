@@ -8,107 +8,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  generate_alarm_media:
-    name: Generate bundled alarm media
-    if: github.event_name == 'pull_request' && github.head_ref == 'v0.3-playback-snooze'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out PR branch
-        uses: actions/checkout@v7
-        with:
-          ref: v0.3-playback-snooze
-          fetch-depth: 0
-
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Generate alarm MP3 when missing
-        run: |
-          if [ -f custom_components/assist_satellite_alarms/media/alarm.mp3 ]; then
-            echo "Bundled alarm MP3 already exists."
-            exit 0
-          fi
-
-          mkdir -p custom_components/assist_satellite_alarms/media
-          python - <<'PY'
-          import math
-          import struct
-          import wave
-          from pathlib import Path
-
-          sample_rate = 44100
-          duration = 4.0
-          amplitude = 0.48
-          samples = []
-
-          for n in range(int(sample_rate * duration)):
-              t = n / sample_rate
-              slot = int(t / 0.5)
-              local = t - (slot * 0.5)
-              tone_duration = 0.40
-
-              if local < tone_duration:
-                  frequency = 740.0 if slot % 2 == 0 else 980.0
-                  fade = 0.012
-                  envelope = 1.0
-
-                  if local < fade:
-                      envelope = 0.5 - 0.5 * math.cos(math.pi * local / fade)
-                  elif local > tone_duration - fade:
-                      remaining = max(0.0, tone_duration - local)
-                      envelope = 0.5 - 0.5 * math.cos(math.pi * remaining / fade)
-
-                  value = (
-                      math.sin(2 * math.pi * frequency * t)
-                      + 0.14 * math.sin(2 * math.pi * (2 * frequency) * t)
-                  ) * amplitude * envelope
-              else:
-                  value = 0.0
-
-              samples.append(max(-1.0, min(1.0, value)))
-
-          wav_path = Path("/tmp/alarm.wav")
-          with wave.open(str(wav_path), "wb") as wav_file:
-              wav_file.setnchannels(1)
-              wav_file.setsampwidth(2)
-              wav_file.setframerate(sample_rate)
-              wav_file.writeframes(
-                  b"".join(
-                      struct.pack("<h", int(sample * 32767))
-                      for sample in samples
-                  )
-              )
-          PY
-
-          ffmpeg -y -hide_banner -loglevel error             -i /tmp/alarm.wav             -codec:a libmp3lame             -b:a 64k             -ar 44100             -ac 1             -write_xing 0             custom_components/assist_satellite_alarms/media/alarm.mp3
-
-          ffprobe -hide_banner -v error             -show_entries format=duration,size,bit_rate             -of default=noprint_wrappers=1             custom_components/assist_satellite_alarms/media/alarm.mp3
-
-      - name: Commit generated media and remove generator scaffolding
-        run: |
-          if git ls-files --error-unmatch custom_components/assist_satellite_alarms/media/alarm.mp3 >/dev/null 2>&1; then
-            echo "Bundled alarm MP3 is already tracked."
-            exit 0
-          fi
-
-          rm -f .github/workflows/generate-alarm-media.yml
-          git checkout origin/main -- .github/workflows/tests.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/assist_satellite_alarms/media/alarm.mp3
-          git add -A .github/workflows
-          git commit -m "feat: bundle generated alarm MP3"
-          git push origin HEAD:v0.3-playback-snooze
-
   lint:
     name: Ruff and syntax
     runs-on: ubuntu-latest
