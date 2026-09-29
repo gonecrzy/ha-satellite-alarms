@@ -96,9 +96,7 @@ async def test_create_fire_and_stop_services(hass: HomeAssistant) -> None:
 
     triggered_events = []
     stopped_events = []
-    unsub_triggered = hass.bus.async_listen(
-        EVENT_ALARM_TRIGGERED, triggered_events.append
-    )
+    unsub_triggered = hass.bus.async_listen(EVENT_ALARM_TRIGGERED, triggered_events.append)
     unsub_stopped = hass.bus.async_listen(EVENT_ALARM_STOPPED, stopped_events.append)
     try:
         fire_response = await hass.services.async_call(
@@ -126,7 +124,5 @@ async def test_create_fire_and_stop_services(hass: HomeAssistant) -> None:
     assert fire_response["ringing"] is True
     assert stop_response["stopped"] is True
     assert len(triggered_events) == 1
-    assert triggered_events[0].data["assist_satellite_entity_id"] == (
-        "assist_satellite.bedroom"
-    )
+    assert triggered_events[0].data["assist_satellite_entity_id"] == ("assist_satellite.bedroom")
     assert len(stopped_events) == 1
