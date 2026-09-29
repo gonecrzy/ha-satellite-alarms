@@ -6,19 +6,22 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 
 from .alarm_manager import AlarmManager
 from .const import (
     DATA_ALARM_MANAGER,
+    DATA_PLAYBACK_MANAGER,
     DATA_RECONCILED,
     DATA_REGISTRY,
     DATA_SCHEDULER_ADAPTER,
     DOMAIN,
 )
 from .models import AlarmEndpoint
+from .playback import PlaybackManager
 from .registry import AlarmRegistry
 from .scheduler_adapter import SchedulerAdapter, SchedulerNotReadyError
 from .services import async_register_services
@@ -36,12 +39,19 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     await registry.async_load()
     scheduler = SchedulerAdapter(hass)
     manager = AlarmManager(hass, registry, scheduler)
+    playback = PlaybackManager(hass, registry, scheduler)
 
     domain_data[DATA_REGISTRY] = registry
     domain_data[DATA_SCHEDULER_ADAPTER] = scheduler
     domain_data[DATA_ALARM_MANAGER] = manager
+    domain_data[DATA_PLAYBACK_MANAGER] = playback
 
-    await async_register_services(hass, manager)
+    await async_register_services(hass, manager, playback)
+
+    async def async_shutdown(_event: Event) -> None:
+        await playback.async_shutdown()
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, async_shutdown)
     return True
 
 
@@ -79,4 +89,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload one Satellite Alarms endpoint."""
+    playback: PlaybackManager = hass.data[DOMAIN][DATA_PLAYBACK_MANAGER]
+    active = playback.active_for_endpoint(entry.entry_id)
+    if active is not None:
+        await playback.async_stop(endpoint_id=entry.entry_id, reason="unload")
     return True
