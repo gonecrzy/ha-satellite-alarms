@@ -82,10 +82,21 @@ class AlarmManager:
         time_value: str,
         date_value: str | None,
     ) -> str | None:
-        """Normalize the date for a recurrence."""
+        """Normalize the date for a recurrence and reject past one-time alarms."""
         if recurrence != RECURRENCE_ONCE:
             return None
-        return date_value or cls._next_date(time_value)
+
+        target_date = date_value or cls._next_date(time_value)
+        parsed_date = dt_util.parse_date(target_date)
+        parsed_time = dt_util.parse_time(time_value)
+        if parsed_date is None or parsed_time is None:
+            raise ValueError("Invalid one-time alarm date or time")
+
+        now = dt_util.now()
+        target = datetime.combine(parsed_date, parsed_time, tzinfo=now.tzinfo)
+        if target <= now:
+            raise ValueError("One-time alarm must be scheduled in the future")
+        return target_date
 
     async def async_create(
         self,
@@ -156,20 +167,20 @@ class AlarmManager:
             )
 
             if new_recurrence == RECURRENCE_ONCE:
-                if date_value is not None:
-                    new_date = date_value
-                elif current_recurrence == RECURRENCE_ONCE:
-                    current_date = record.metadata.get(META_DATE)
-                    new_date = str(current_date) if current_date else None
-                    if new_date is None:
-                        new_date = self._next_date(new_time)
-                else:
-                    new_date = self._next_date(new_time)
+                current_date = record.metadata.get(META_DATE)
+                candidate_date = date_value
+                if candidate_date is None and current_recurrence == RECURRENCE_ONCE:
+                    candidate_date = str(current_date) if current_date else None
+                new_date = self._normalize_date(
+                    recurrence=new_recurrence,
+                    time_value=new_time,
+                    date_value=candidate_date,
+                )
             else:
                 new_date = None
 
             if schedule_changed:
-                entity_id = record.scheduler_entity_id or self.scheduler.find_entity_id(alarm_id)
+                entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
                 if entity_id is None:
                     raise AlarmNotFoundError(
                         f"Scheduler entity for alarm {alarm_id} could not be found"
@@ -196,7 +207,7 @@ class AlarmManager:
         """Delete an alarm and its Scheduler Component schedule."""
         async with self._lock:
             record = self._record(alarm_id)
-            entity_id = record.scheduler_entity_id or self.scheduler.find_entity_id(alarm_id)
+            entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
             if entity_id is None:
                 raise AlarmNotFoundError(
                     f"Scheduler entity for alarm {alarm_id} could not be found"
@@ -208,7 +219,7 @@ class AlarmManager:
         """Enable or disable an alarm."""
         async with self._lock:
             record = self._record(alarm_id)
-            entity_id = record.scheduler_entity_id or self.scheduler.find_entity_id(alarm_id)
+            entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
             if entity_id is None:
                 raise AlarmNotFoundError(
                     f"Scheduler entity for alarm {alarm_id} could not be found"
@@ -248,7 +259,7 @@ class AlarmManager:
 
     def response(self, record: AlarmRecord) -> dict[str, object]:
         """Build a service response for an alarm."""
-        entity_id = record.scheduler_entity_id
+        entity_id = self.scheduler.find_entity_id(record.alarm_id) or record.scheduler_entity_id
         return {
             "alarm_id": record.alarm_id,
             "endpoint_id": record.endpoint_entry_id,
