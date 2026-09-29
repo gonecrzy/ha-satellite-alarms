@@ -14,6 +14,7 @@ from .const import (
     CONF_AREA_ID,
     CONF_ASSIST_SATELLITE,
     CONF_DEFAULT_ALARM_MEDIA,
+    CONF_DEFAULT_ALARM_MESSAGE,
     CONF_DEFAULT_SNOOZE_MINUTES,
     CONF_DEFAULT_VOLUME,
     CONF_MAX_RING_MINUTES,
@@ -23,6 +24,7 @@ from .const import (
     CONF_VOLUME_RAMP_SECONDS,
     CONF_VOLUME_RAMP_START,
     DEFAULT_ALARM_MEDIA,
+    DEFAULT_ALARM_MESSAGE,
     DEFAULT_MAX_RING_MINUTES,
     DEFAULT_SNOOZE_MINUTES,
     DEFAULT_VOLUME,
@@ -105,6 +107,9 @@ OPTIONS_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_DEFAULT_ALARM_MEDIA, default=DEFAULT_ALARM_MEDIA
+        ): selector.TextSelector(),
+        vol.Optional(
+            CONF_DEFAULT_ALARM_MESSAGE, default=DEFAULT_ALARM_MESSAGE
         ): selector.TextSelector(),
     }
 )

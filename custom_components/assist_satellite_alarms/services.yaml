@@ -111,3 +111,44 @@ fire:
       required: true
       selector:
         text:
+
+stop:
+  name: Stop alarm
+  description: Stop the currently ringing alarm and restore the previous media-player volume.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      description: Stable alarm ID. Provide either Alarm ID or Endpoint.
+      selector:
+        text:
+    endpoint_id:
+      name: Endpoint
+      description: Configured Satellite Alarms endpoint. Provide either Endpoint or Alarm ID.
+      selector:
+        config_entry:
+          integration: assist_satellite_alarms
+
+snooze:
+  name: Snooze alarm
+  description: Stop the currently ringing alarm and create a temporary one-time Scheduler occurrence.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      description: Stable alarm ID. Provide either Alarm ID or Endpoint.
+      selector:
+        text:
+    endpoint_id:
+      name: Endpoint
+      description: Configured Satellite Alarms endpoint. Provide either Endpoint or Alarm ID.
+      selector:
+        config_entry:
+          integration: assist_satellite_alarms
+    minutes:
+      name: Minutes
+      description: Snooze duration. If omitted, the endpoint default is used.
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          mode: box

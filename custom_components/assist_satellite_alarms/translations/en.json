@@ -31,7 +31,7 @@
     "step": {
       "init": {
         "title": "Alarm defaults",
-        "description": "These defaults will be used by later alarm playback versions.",
+        "description": "Configure playback, snooze, volume, and timeout defaults for this alarm endpoint.",
         "data": {
           "default_volume": "Default alarm volume",
           "default_snooze_minutes": "Default snooze (minutes)",
@@ -39,7 +39,8 @@
           "volume_ramp_start": "Ramp starting volume",
           "volume_ramp_seconds": "Ramp duration (seconds)",
           "max_ring_minutes": "Maximum ringing time (minutes)",
-          "default_alarm_media": "Default alarm media"
+          "default_alarm_media": "Default alarm media",
+          "default_alarm_message": "Default alarm message"
         },
         "data_description": {
           "default_volume": "Volume from 0.0 to 1.0 used when an alarm rings.",
@@ -48,7 +49,8 @@
           "volume_ramp_start": "Starting volume for the gradual wake ramp.",
           "volume_ramp_seconds": "How long the volume ramp should take.",
           "max_ring_minutes": "Stop an unanswered alarm after this many minutes.",
-          "default_alarm_media": "Optional media URL or Home Assistant media reference. Playback is implemented in a later version."
+          "default_alarm_media": "Optional media URL or Home Assistant media reference. When set, the alarm repeats this media through assist_satellite.announce.",
+          "default_alarm_message": "Spoken fallback used when no alarm media is configured."
         }
       }
     }
