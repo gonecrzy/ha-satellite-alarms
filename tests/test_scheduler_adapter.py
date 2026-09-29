@@ -1,7 +1,6 @@
 """Tests for the Scheduler Component adapter."""
 
 import pytest
-
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.satellite_alarms.const import SCHEDULER_DOMAIN
