@@ -166,7 +166,9 @@ async def test_update_delete_enable_disable(hass: HomeAssistant) -> None:
     assert manager.registry.get(record.alarm_id) is None
 
 
-async def test_update_repeating_alarm_to_once_resolves_date(hass: HomeAssistant, monkeypatch) -> None:
+async def test_update_repeating_alarm_to_once_resolves_date(
+    hass: HomeAssistant, monkeypatch
+) -> None:
     """Switching recurrence to once should resolve the next local date."""
     entry = _add_endpoint(hass)
     manager, calls = await _manager(hass)
