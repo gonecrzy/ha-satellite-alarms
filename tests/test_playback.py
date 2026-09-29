@@ -106,9 +106,7 @@ async def test_start_and_stop_restores_volume(hass: HomeAssistant) -> None:
     entry = _add_endpoint(hass)
     hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.35})
     calls = _register_playback_services(hass)
-    registry = await _registry_with_alarm(
-        hass, alarm_id="alarm-1", endpoint_id=entry.entry_id
-    )
+    registry = await _registry_with_alarm(hass, alarm_id="alarm-1", endpoint_id=entry.entry_id)
     playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
 
     active = await playback.async_start("alarm-1")
@@ -119,9 +117,7 @@ async def test_start_and_stop_restores_volume(hass: HomeAssistant) -> None:
     assert playback.active_for_endpoint(entry.entry_id) is None
 
     volume_levels = [
-        call[2]["volume_level"]
-        for call in calls
-        if call[:2] == ("media_player", "volume_set")
+        call[2]["volume_level"] for call in calls if call[:2] == ("media_player", "volume_set")
     ]
     assert volume_levels[0] == 0.2
     assert volume_levels[-1] == 0.35
@@ -133,18 +129,14 @@ async def test_default_alarm_uses_spoken_fallback(hass: HomeAssistant) -> None:
     entry = _add_endpoint(hass)
     hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
     calls = _register_playback_services(hass)
-    registry = await _registry_with_alarm(
-        hass, alarm_id="alarm-1", endpoint_id=entry.entry_id
-    )
+    registry = await _registry_with_alarm(hass, alarm_id="alarm-1", endpoint_id=entry.entry_id)
     playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
 
     await playback.async_start("alarm-1")
     await asyncio.sleep(0)
     await playback.async_stop(alarm_id="alarm-1")
 
-    announce = next(
-        call for call in calls if call[:2] == ("assist_satellite", "announce")
-    )
+    announce = next(call for call in calls if call[:2] == ("assist_satellite", "announce"))
     assert announce[2]["entity_id"] == "assist_satellite.bedroom"
     assert announce[2]["message"] == "Alarm"
     assert announce[2]["preannounce"] is True
@@ -160,18 +152,14 @@ async def test_configured_alarm_media_is_announced_without_preannounce(
     )
     hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
     calls = _register_playback_services(hass)
-    registry = await _registry_with_alarm(
-        hass, alarm_id="alarm-1", endpoint_id=entry.entry_id
-    )
+    registry = await _registry_with_alarm(hass, alarm_id="alarm-1", endpoint_id=entry.entry_id)
     playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
 
     await playback.async_start("alarm-1")
     await asyncio.sleep(0)
     await playback.async_stop(alarm_id="alarm-1")
 
-    announce = next(
-        call for call in calls if call[:2] == ("assist_satellite", "announce")
-    )
+    announce = next(call for call in calls if call[:2] == ("assist_satellite", "announce"))
     assert announce[2]["media_id"] == "media-source://media_source/local/alarm.mp3"
     assert announce[2]["preannounce"] is False
     assert "message" not in announce[2]
@@ -197,9 +185,7 @@ async def test_snooze_creates_transient_schedule_and_preserves_one_time_alarm(
 
     await playback.async_start("alarm-1")
     await asyncio.sleep(0)
-    active, minutes, snooze_entity_id = await playback.async_snooze(
-        alarm_id="alarm-1"
-    )
+    active, minutes, snooze_entity_id = await playback.async_snooze(alarm_id="alarm-1")
 
     assert active.finish_reason == "snooze"
     assert minutes == 7
@@ -320,9 +306,7 @@ async def test_unavailable_media_player_rejects_start(hass: HomeAssistant) -> No
     entry = _add_endpoint(hass)
     hass.states.async_set("media_player.bedroom", "unavailable")
     _register_playback_services(hass)
-    registry = await _registry_with_alarm(
-        hass, alarm_id="alarm-1", endpoint_id=entry.entry_id
-    )
+    registry = await _registry_with_alarm(hass, alarm_id="alarm-1", endpoint_id=entry.entry_id)
     playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
 
     with pytest.raises(PlaybackError, match="unavailable"):
