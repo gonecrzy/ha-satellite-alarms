@@ -27,9 +27,7 @@ class AlarmRegistry:
         data = await self._store.async_load() or {}
         records = data.get("alarms", [])
         self._alarms = {
-            record.alarm_id: record
-            for item in records
-            if (record := AlarmRecord.from_dict(item))
+            record.alarm_id: record for item in records if (record := AlarmRecord.from_dict(item))
         }
 
     async def async_save(self) -> None:
@@ -49,9 +47,7 @@ class AlarmRegistry:
     def for_endpoint(self, entry_id: str) -> tuple[AlarmRecord, ...]:
         """Return alarm records owned by a config entry."""
         return tuple(
-            record
-            for record in self._alarms.values()
-            if record.endpoint_entry_id == entry_id
+            record for record in self._alarms.values() if record.endpoint_entry_id == entry_id
         )
 
     async def async_upsert(self, record: AlarmRecord) -> None:

@@ -32,7 +32,5 @@ async def async_get_config_entry_diagnostics(
         },
         "options": dict(entry.options),
         "scheduler_ready": bool(adapter and adapter.is_ready),
-        "alarm_record_count": (
-            len(registry.for_endpoint(entry.entry_id)) if registry else 0
-        ),
+        "alarm_record_count": (len(registry.for_endpoint(entry.entry_id)) if registry else 0),
     }

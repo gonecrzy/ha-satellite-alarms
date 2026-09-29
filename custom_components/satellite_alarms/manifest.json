@@ -1,7 +1,6 @@
 {
   "domain": "satellite_alarms",
   "name": "Satellite Alarms",
-  "version": "0.1.0",
   "codeowners": [
     "@gonecrzy"
   ],
@@ -10,8 +9,9 @@
     "scheduler"
   ],
   "documentation": "https://github.com/gonecrzy/ha-satellite-alarms",
-  "issue_tracker": "https://github.com/gonecrzy/ha-satellite-alarms/issues",
   "integration_type": "service",
   "iot_class": "local_push",
-  "requirements": []
+  "issue_tracker": "https://github.com/gonecrzy/ha-satellite-alarms/issues",
+  "requirements": [],
+  "version": "0.1.0"
 }

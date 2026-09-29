@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
@@ -53,9 +52,7 @@ def _config_schema() -> vol.Schema:
 
 OPTIONS_SCHEMA = vol.Schema(
     {
-        vol.Optional(
-            CONF_DEFAULT_VOLUME, default=DEFAULT_VOLUME
-        ): selector.NumberSelector(
+        vol.Optional(CONF_DEFAULT_VOLUME, default=DEFAULT_VOLUME): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
                 max=1.0,
@@ -118,9 +115,7 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Configure a satellite alarm endpoint."""
         errors: dict[str, str] = {}
 
@@ -156,9 +151,7 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class SatelliteAlarmsOptionsFlow(OptionsFlow):
     """Manage endpoint alarm defaults."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage Satellite Alarms options."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 
@@ -26,7 +27,7 @@ class AlarmEndpoint:
     area_id: str | None = None
 
     @classmethod
-    def from_config_entry(cls, entry: ConfigEntry) -> "AlarmEndpoint":
+    def from_config_entry(cls, entry: ConfigEntry) -> AlarmEndpoint:
         """Build an endpoint from a Home Assistant config entry."""
         return cls(
             entry_id=entry.entry_id,
@@ -56,7 +57,7 @@ class AlarmRecord:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "AlarmRecord":
+    def from_dict(cls, data: Mapping[str, Any]) -> AlarmRecord:
         """Deserialize a record from Home Assistant storage."""
         return cls(
             alarm_id=str(data["alarm_id"]),
