@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
@@ -53,9 +52,7 @@ def _config_schema() -> vol.Schema:
 
 OPTIONS_SCHEMA = vol.Schema(
     {
-        vol.Optional(
-            CONF_DEFAULT_VOLUME, default=DEFAULT_VOLUME
-        ): selector.NumberSelector(
+        vol.Optional(CONF_DEFAULT_VOLUME, default=DEFAULT_VOLUME): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
                 max=1.0,
