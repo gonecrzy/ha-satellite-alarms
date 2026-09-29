@@ -29,6 +29,7 @@ DEFAULT_ALARM_MEDIA: Final = ""
 DATA_REGISTRY: Final = "registry"
 DATA_SCHEDULER_ADAPTER: Final = "scheduler_adapter"
 DATA_ALARM_MANAGER: Final = "alarm_manager"
+DATA_RECONCILED: Final = "reconciled"
 
 STORAGE_KEY: Final = f"{DOMAIN}.registry"
 STORAGE_VERSION: Final = 1
