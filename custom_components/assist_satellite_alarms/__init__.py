@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
@@ -13,6 +15,8 @@ from homeassistant.helpers import config_validation as cv
 
 from .alarm_manager import AlarmManager
 from .const import (
+    BUILTIN_ALARM_MEDIA_FILENAME,
+    BUILTIN_ALARM_MEDIA_URL,
     DATA_ALARM_MANAGER,
     DATA_PLAYBACK_MANAGER,
     DATA_RECONCILED,
@@ -45,6 +49,16 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     domain_data[DATA_SCHEDULER_ADAPTER] = scheduler
     domain_data[DATA_ALARM_MANAGER] = manager
     domain_data[DATA_PLAYBACK_MANAGER] = playback
+
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                BUILTIN_ALARM_MEDIA_URL,
+                str(Path(__file__).parent / "media" / BUILTIN_ALARM_MEDIA_FILENAME),
+                True,
+            )
+        ]
+    )
 
     await async_register_services(hass, manager, playback)
 
