@@ -22,8 +22,8 @@ The alarm should belong to that room and ring only on that room's configured spe
 - Native-feeling voice alarms for Home Assistant Assist.
 - Automatic room targeting from the originating `assist_satellite`.
 - Generic support for Assist satellites and media players; no EchoMuse-specific dependency.
-- Persistent alarms that survive Home Assistant restarts.
-- One-time and recurring alarms.
+- Persistent alarms backed by Scheduler Component.
+- One-time and recurring alarms using Scheduler Component's schedule engine.
 - Room-local stop and snooze behavior.
 - Safe volume handling: save, raise/ramp, ring, then restore.
 - Multiple alarms per room as the project matures.
@@ -42,10 +42,19 @@ Home Assistant Assist
      v
 Satellite Alarms integration
      |
-     +--> persistent alarm store
-     +--> scheduling engine
      +--> room/satellite mapping
-     +--> alarm state
+     +--> alarm metadata/state
+     +--> stop/snooze/playback logic
+     |
+     v
+Scheduler Component
+     |
+     +--> persistent schedule
+     +--> recurrence / next trigger
+     +--> scheduler switch entity
+     |
+     v
+Satellite Alarms fire action
      |
      v
 Configured media_player
@@ -65,6 +74,12 @@ assist_satellite.bedroom_voice_assistant
 
 The design is intentionally generic. EchoMuse satellites are a primary development target, but the integration should work with other Home Assistant voice satellites and compatible media players.
 
+## Required dependency
+
+Satellite Alarms is designed on top of [Scheduler Component](https://github.com/nielsfaber/scheduler-component). Scheduler Component owns the actual time schedules, recurrence, persistence, enable/disable state, and `next_trigger` calculation. Satellite Alarms adds the alarm-specific behavior that Scheduler Component does not provide: Assist-satellite room routing, alarm metadata, playback, volume handling, stop/snooze, and voice commands.
+
+Development begins against Scheduler Component 3.x (currently 3.3.8). The dependency will be isolated behind a scheduler adapter so it can be changed later without rewriting the alarm/voice layers.
+
 ## Initial feature set
 
 The first usable release is intended to support:
@@ -81,7 +96,7 @@ The first usable release is intended to support:
 - Configurable alarm volume.
 - Save and restore prior media-player volume.
 - Optional gradual volume ramp.
-- Persistent storage and restart recovery.
+- Scheduler-backed persistence and restart recovery.
 
 See [Project Plan](docs/PROJECT_PLAN.md) for the proposed architecture, restrictions, data model, and version roadmap.
 
@@ -140,8 +155,8 @@ These restrictions can be relaxed in later versions without changing the core al
 
 | Version | Focus |
 | --- | --- |
-| v0.1 | Integration skeleton, config flow, room mapping, persistent alarm model |
-| v0.2 | Scheduling, one-time/daily/weekday alarms, basic services |
+| v0.1 | Integration skeleton, Scheduler dependency/adapter, config flow, room mapping, alarm metadata registry |
+| v0.2 | Scheduler-backed one-time/daily/weekday alarms and basic services |
 | v0.3 | Alarm playback, volume save/ramp/restore, stop and snooze |
 | v0.4 | Native Assist voice commands and originating-satellite routing |
 | v0.5 | Multiple alarms, query/cancel by time or name, richer recurrence |
@@ -164,8 +179,8 @@ custom_components/
     const.py
     coordinator.py
     models.py
-    storage.py
-    scheduler.py
+    registry.py
+    scheduler_adapter.py
     alarm_manager.py
     services.yaml
     strings.json
@@ -182,7 +197,7 @@ The internal file layout may change as the implementation develops.
 
 Not available yet.
 
-When an installable release exists, the intended installation path is HACS custom repository support plus Home Assistant's normal integration config flow.
+When an installable release exists, install and configure Scheduler Component first, then install Satellite Alarms through HACS custom repository support and add each satellite endpoint through Home Assistant's normal integration config flow.
 
 ## Contributing
 
