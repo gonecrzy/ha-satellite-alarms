@@ -10,11 +10,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DOMAIN,
     META_DATE,
     META_RECURRENCE,
     META_TIME,
     RECURRENCE_ONCE,
-    DOMAIN,
 )
 from .models import AlarmEndpoint, AlarmRecord
 from .registry import AlarmRegistry
