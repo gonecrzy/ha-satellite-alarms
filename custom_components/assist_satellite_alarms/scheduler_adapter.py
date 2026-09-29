@@ -1,20 +1,34 @@
-"""Scheduler Component adapter for Satellite Alarms.
-
-v0.1 validates the dependency and centralizes Scheduler-specific knowledge.
-Schedule creation/edit/removal will be added in v0.2.
-"""
+"""Scheduler Component adapter for Satellite Alarms."""
 
 from __future__ import annotations
 
-from homeassistant.core import HomeAssistant
+from typing import Any
 
-from .const import SCHEDULER_DOMAIN
+from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_OFF, SERVICE_TURN_ON
+from homeassistant.core import HomeAssistant
+from homeassistant.util import slugify
+
+from .const import (
+    ATTR_ALARM_ID,
+    DOMAIN,
+    RECURRENCE_DAILY,
+    RECURRENCE_ONCE,
+    RECURRENCE_WEEKDAYS,
+    RECURRENCE_WEEKENDS,
+    SCHEDULER_DOMAIN,
+)
 
 SERVICE_ADD = "add"
 SERVICE_EDIT = "edit"
 SERVICE_REMOVE = "remove"
 
 _REQUIRED_SERVICES = (SERVICE_ADD, SERVICE_EDIT, SERVICE_REMOVE)
+
+_SCHEDULER_DAILY = "daily"
+_SCHEDULER_WORKDAY = "workday"
+_SCHEDULER_WEEKEND = "weekend"
+_REPEAT = "repeat"
+_SINGLE = "single"
 
 
 class SchedulerNotReadyError(RuntimeError):
@@ -44,3 +58,145 @@ class SchedulerAdapter:
                 "integration in Home Assistant, and restart/reload before setting "
                 "up Satellite Alarms."
             )
+
+    @staticmethod
+    def alarm_tag(alarm_id: str) -> str:
+        """Return the stable Scheduler tag for an alarm."""
+        return f"{DOMAIN}:{alarm_id}"
+
+    @staticmethod
+    def schedule_name(alarm_id: str) -> str:
+        """Return the immutable internal Scheduler schedule name."""
+        return f"Assist Satellite Alarm {alarm_id}"
+
+    @classmethod
+    def expected_entity_id(cls, alarm_id: str) -> str:
+        """Return the Scheduler entity ID produced by the immutable name."""
+        return f"switch.schedule_{slugify(cls.schedule_name(alarm_id))}"
+
+    @staticmethod
+    def _weekdays_for_recurrence(recurrence: str) -> list[str]:
+        """Translate a Satellite Alarms recurrence to Scheduler Component."""
+        mapping = {
+            RECURRENCE_ONCE: [_SCHEDULER_DAILY],
+            RECURRENCE_DAILY: [_SCHEDULER_DAILY],
+            RECURRENCE_WEEKDAYS: [_SCHEDULER_WORKDAY],
+            RECURRENCE_WEEKENDS: [_SCHEDULER_WEEKEND],
+        }
+        return mapping[recurrence]
+
+    @classmethod
+    def build_schedule_payload(
+        cls,
+        *,
+        alarm_id: str,
+        time: str,
+        recurrence: str,
+        date: str | None,
+        include_name: bool = True,
+    ) -> dict[str, Any]:
+        """Build a Scheduler Component add/edit payload."""
+        if recurrence == RECURRENCE_ONCE and date is None:
+            raise ValueError("One-time alarms require a date")
+
+        payload: dict[str, Any] = {
+            "weekdays": cls._weekdays_for_recurrence(recurrence),
+            "start_date": date if recurrence == RECURRENCE_ONCE else None,
+            "end_date": date if recurrence == RECURRENCE_ONCE else None,
+            "timeslots": [
+                {
+                    "start": time,
+                    "actions": [
+                        {
+                            "service": f"{DOMAIN}.fire",
+                            "service_data": {ATTR_ALARM_ID: alarm_id},
+                        }
+                    ],
+                }
+            ],
+            "repeat_type": _SINGLE if recurrence == RECURRENCE_ONCE else _REPEAT,
+            "tags": [DOMAIN, cls.alarm_tag(alarm_id)],
+        }
+        if include_name:
+            payload["name"] = cls.schedule_name(alarm_id)
+        return payload
+
+    async def async_create_schedule(
+        self, *, alarm_id: str, time: str, recurrence: str, date: str | None
+    ) -> str:
+        """Create a persistent Scheduler Component schedule."""
+        self.ensure_ready()
+        payload = self.build_schedule_payload(
+            alarm_id=alarm_id,
+            time=time,
+            recurrence=recurrence,
+            date=date,
+        )
+        await self.hass.services.async_call(
+            SCHEDULER_DOMAIN,
+            SERVICE_ADD,
+            payload,
+            blocking=True,
+        )
+        return self.expected_entity_id(alarm_id)
+
+    async def async_update_schedule(
+        self,
+        *,
+        entity_id: str,
+        alarm_id: str,
+        time: str,
+        recurrence: str,
+        date: str | None,
+    ) -> None:
+        """Update a Scheduler Component schedule."""
+        self.ensure_ready()
+        payload = self.build_schedule_payload(
+            alarm_id=alarm_id,
+            time=time,
+            recurrence=recurrence,
+            date=date,
+            include_name=False,
+        )
+        payload[ATTR_ENTITY_ID] = entity_id
+        await self.hass.services.async_call(
+            SCHEDULER_DOMAIN,
+            SERVICE_EDIT,
+            payload,
+            blocking=True,
+        )
+
+    async def async_remove_schedule(self, entity_id: str) -> None:
+        """Remove a Scheduler Component schedule."""
+        self.ensure_ready()
+        await self.hass.services.async_call(
+            SCHEDULER_DOMAIN,
+            SERVICE_REMOVE,
+            {ATTR_ENTITY_ID: entity_id},
+            blocking=True,
+        )
+
+    async def async_set_enabled(self, entity_id: str, enabled: bool) -> None:
+        """Enable or disable a Scheduler schedule through its switch entity."""
+        service = SERVICE_TURN_ON if enabled else SERVICE_TURN_OFF
+        await self.hass.services.async_call(
+            "switch",
+            service,
+            {ATTR_ENTITY_ID: entity_id},
+            blocking=True,
+        )
+
+    def find_entity_id(self, alarm_id: str) -> str | None:
+        """Find a Scheduler entity by the stable alarm tag."""
+        tag = self.alarm_tag(alarm_id)
+        for state in self.hass.states.async_all("switch"):
+            if tag in state.attributes.get("tags", []):
+                return state.entity_id
+        return None
+
+    def next_trigger(self, entity_id: str) -> str | None:
+        """Return Scheduler Component's next trigger for an entity."""
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return None
+        return state.attributes.get("next_trigger")
