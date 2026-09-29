@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.assist_satellite_alarms.const import (
+    BUILTIN_ALARM_MEDIA_URL,
     CONF_ASSIST_SATELLITE,
     CONF_DEFAULT_ALARM_MEDIA,
     CONF_DEFAULT_SNOOZE_MINUTES,
@@ -124,8 +125,8 @@ async def test_start_and_stop_restores_volume(hass: HomeAssistant) -> None:
     assert any(call[:2] == ("media_player", "media_stop") for call in calls)
 
 
-async def test_default_alarm_uses_spoken_fallback(hass: HomeAssistant) -> None:
-    """No configured media should use a short Assist announcement."""
+async def test_default_alarm_uses_bundled_media(hass: HomeAssistant) -> None:
+    """The default endpoint should use the bundled alarm media."""
     entry = _add_endpoint(hass)
     hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
     calls = _register_playback_services(hass)
@@ -138,6 +139,24 @@ async def test_default_alarm_uses_spoken_fallback(hass: HomeAssistant) -> None:
 
     announce = next(call for call in calls if call[:2] == ("assist_satellite", "announce"))
     assert announce[2]["entity_id"] == "assist_satellite.bedroom"
+    assert announce[2]["media_id"] == BUILTIN_ALARM_MEDIA_URL
+    assert announce[2]["preannounce"] is False
+    assert "message" not in announce[2]
+
+
+async def test_empty_alarm_media_uses_spoken_fallback(hass: HomeAssistant) -> None:
+    """Explicitly empty media should fall back to the configured spoken message."""
+    entry = _add_endpoint(hass, options={CONF_DEFAULT_ALARM_MEDIA: ""})
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
+    calls = _register_playback_services(hass)
+    registry = await _registry_with_alarm(hass, alarm_id="alarm-1", endpoint_id=entry.entry_id)
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+
+    await playback.async_start("alarm-1")
+    await asyncio.sleep(0)
+    await playback.async_stop(alarm_id="alarm-1")
+
+    announce = next(call for call in calls if call[:2] == ("assist_satellite", "announce"))
     assert announce[2]["message"] == "Alarm"
     assert announce[2]["preannounce"] is True
 
