@@ -71,7 +71,7 @@ async def test_create_alarm(hass: HomeAssistant) -> None:
         endpoint_id=entry.entry_id,
         time_value="06:30:00",
         recurrence=RECURRENCE_ONCE,
-        date_value="2026-09-30",
+        date_value="2099-09-30",
         name="Work",
     )
 
@@ -81,10 +81,10 @@ async def test_create_alarm(hass: HomeAssistant) -> None:
     assert record.metadata == {
         META_TIME: "06:30:00",
         META_RECURRENCE: RECURRENCE_ONCE,
-        META_DATE: "2026-09-30",
+        META_DATE: "2099-09-30",
     }
     assert calls[0][0] == "add"
-    assert calls[0][1]["start_date"] == "2026-09-30"
+    assert calls[0][1]["start_date"] == "2099-09-30"
     assert calls[0][1]["timeslots"][0]["actions"][0]["service"] == f"{DOMAIN}.fire"
 
 
@@ -178,16 +178,16 @@ async def test_update_repeating_alarm_to_once_resolves_date(
         recurrence=RECURRENCE_DAILY,
     )
     calls.clear()
-    monkeypatch.setattr(manager, "_next_date", lambda _time: "2026-10-01")
+    monkeypatch.setattr(manager, "_next_date", lambda _time: "2099-10-01")
 
     updated = await manager.async_update(
         alarm_id=record.alarm_id,
         recurrence=RECURRENCE_ONCE,
     )
 
-    assert updated.metadata[META_DATE] == "2026-10-01"
+    assert updated.metadata[META_DATE] == "2099-10-01"
     assert calls[0][1]["repeat_type"] == "single"
-    assert calls[0][1]["start_date"] == "2026-10-01"
+    assert calls[0][1]["start_date"] == "2099-10-01"
 
 
 async def test_manager_validation_errors(hass: HomeAssistant) -> None:
@@ -223,7 +223,7 @@ async def test_reconcile_scheduler_entity_mapping(hass: HomeAssistant) -> None:
         "on",
         {
             "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
-            "next_trigger": "2026-09-30T07:00:00-04:00",
+            "next_trigger": "2099-09-30T07:00:00-04:00",
         },
     )
 
@@ -247,3 +247,44 @@ async def test_reconcile_reports_missing_scheduler_schedule(hass: HomeAssistant)
 
     assert (matched, missing) == (0, 1)
     assert manager.registry.get(record.alarm_id) == record
+
+
+async def test_create_rejects_past_one_time_alarm(hass: HomeAssistant) -> None:
+    """Explicit one-time alarm dates in the past should be rejected."""
+    entry = _add_endpoint(hass)
+    manager, calls = await _manager(hass)
+
+    with pytest.raises(ValueError, match="future"):
+        await manager.async_create(
+            endpoint_id=entry.entry_id,
+            time_value="07:00:00",
+            recurrence=RECURRENCE_ONCE,
+            date_value="2000-01-01",
+        )
+
+    assert calls == []
+    assert manager.registry.all() == ()
+
+
+async def test_runtime_scheduler_rename_is_resolved_by_tag(hass: HomeAssistant) -> None:
+    """Operations should use the stable tag if the Scheduler entity ID changes."""
+    entry = _add_endpoint(hass)
+    manager, calls = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="07:00:00",
+        recurrence=RECURRENCE_DAILY,
+    )
+    calls.clear()
+
+    renamed_entity_id = "switch.user_renamed_schedule"
+    hass.states.async_set(
+        renamed_entity_id,
+        "on",
+        {"tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)]},
+    )
+
+    await manager.async_update(alarm_id=record.alarm_id, time_value="07:15:00")
+
+    assert calls[0][0] == "edit"
+    assert calls[0][1]["entity_id"] == renamed_entity_id
