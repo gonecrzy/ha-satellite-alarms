@@ -274,8 +274,17 @@ class PlaybackManager:
                 await self._async_set_volume(active.media_player_entity_id, target_volume)
 
             while True:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    active.finish_reason = "timeout"
+                    break
+
                 try:
-                    await self._async_announce(active, entry)
+                    async with asyncio.timeout(remaining):
+                        await self._async_announce(active, entry)
+                except TimeoutError:
+                    active.finish_reason = "timeout"
+                    break
                 except HomeAssistantError:
                     _LOGGER.warning(
                         "Alarm announcement failed for %s; retrying",
@@ -379,7 +388,8 @@ class PlaybackManager:
             active.task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await active.task
-        else:
+
+        if self._active_by_endpoint.get(active.endpoint_entry_id) is active:
             await self._async_finalize(active)
 
         return active
