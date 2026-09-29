@@ -115,9 +115,7 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Configure a satellite alarm endpoint."""
         errors: dict[str, str] = {}
 
@@ -153,9 +151,7 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class SatelliteAlarmsOptionsFlow(OptionsFlow):
     """Manage endpoint alarm defaults."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage Satellite Alarms options."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)
