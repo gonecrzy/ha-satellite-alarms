@@ -161,10 +161,13 @@ Each endpoint can be configured with:
 - default snooze duration
 - gradual volume ramp and ramp duration
 - maximum ring duration
-- optional alarm media
+- bundled two-tone alarm MP3 (default)
+- optional custom alarm media
 - spoken fallback alarm message
 
-If no alarm media is configured, the integration repeats a short `assist_satellite.announce` fallback message (default: `Alarm`). When media is configured, it is announced directly with no preannounce chime.
+The default alarm sound is a bundled 4-second two-tone MP3 generated specifically for this project (alternating 740 Hz / 980 Hz pulses, mono, 64 kbps). It is served locally by Home Assistant and repeated with no preannounce chime.
+
+A custom endpoint media URL/media-source ID can replace the bundled tone. If alarm media is explicitly cleared, the integration falls back to a short spoken `Alarm` announcement.
 
 The integration saves the media player's current volume before ringing and restores it after stop, snooze, or timeout. v0.3 does not attempt to restore the previous media session/source.
 
