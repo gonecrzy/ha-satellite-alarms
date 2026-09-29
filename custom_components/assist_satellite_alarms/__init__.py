@@ -11,7 +11,13 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 
 from .alarm_manager import AlarmManager
-from .const import DATA_ALARM_MANAGER, DATA_REGISTRY, DATA_SCHEDULER_ADAPTER, DOMAIN
+from .const import (
+    DATA_ALARM_MANAGER,
+    DATA_RECONCILED,
+    DATA_REGISTRY,
+    DATA_SCHEDULER_ADAPTER,
+    DOMAIN,
+)
 from .models import AlarmEndpoint
 from .registry import AlarmRegistry
 from .scheduler_adapter import SchedulerAdapter, SchedulerNotReadyError
@@ -43,11 +49,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up one Satellite Alarms endpoint."""
     domain_data = hass.data[DOMAIN]
     adapter: SchedulerAdapter = domain_data[DATA_SCHEDULER_ADAPTER]
+    manager: AlarmManager = domain_data[DATA_ALARM_MANAGER]
 
     try:
         adapter.ensure_ready()
     except SchedulerNotReadyError as err:
         raise ConfigEntryNotReady(str(err)) from err
+
+    if not domain_data.get(DATA_RECONCILED):
+        matched, missing = await manager.async_reconcile()
+        domain_data[DATA_RECONCILED] = True
+        _LOGGER.info(
+            "Reconciled Satellite Alarms with Scheduler: %s matched, %s missing",
+            matched,
+            missing,
+        )
 
     endpoint = AlarmEndpoint.from_config_entry(entry)
     entry.runtime_data = endpoint
