@@ -178,9 +178,7 @@ async def test_update_repeating_alarm_to_once_resolves_date(
         recurrence=RECURRENCE_DAILY,
     )
     calls.clear()
-    monkeypatch.setattr(
-        AlarmManager, "_next_date", staticmethod(lambda _time: "2099-10-01")
-    )
+    monkeypatch.setattr(AlarmManager, "_next_date", staticmethod(lambda _time: "2099-10-01"))
 
     updated = await manager.async_update(
         alarm_id=record.alarm_id,
