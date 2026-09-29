@@ -102,11 +102,7 @@ class PlaybackManager:
     def active_for_alarm(self, alarm_id: str) -> ActiveAlarm | None:
         """Return an active alarm by stable alarm ID."""
         return next(
-            (
-                active
-                for active in self._active_by_endpoint.values()
-                if active.alarm_id == alarm_id
-            ),
+            (active for active in self._active_by_endpoint.values() if active.alarm_id == alarm_id),
             None,
         )
 
@@ -221,9 +217,7 @@ class PlaybackManager:
 
         if active.previous_volume is not None:
             try:
-                await self._async_set_volume(
-                    active.media_player_entity_id, active.previous_volume
-                )
+                await self._async_set_volume(active.media_player_entity_id, active.previous_volume)
             except HomeAssistantError:
                 _LOGGER.warning(
                     "Could not restore volume for %s",
@@ -242,9 +236,7 @@ class PlaybackManager:
 
     async def _async_run(self, active: ActiveAlarm, entry: ConfigEntry) -> None:
         """Run the repeating alarm loop until stopped or timed out."""
-        target_volume = float(
-            self._option(entry, CONF_DEFAULT_VOLUME, DEFAULT_VOLUME)
-        )
+        target_volume = float(self._option(entry, CONF_DEFAULT_VOLUME, DEFAULT_VOLUME))
         ramp_enabled = bool(
             self._option(
                 entry,
@@ -252,9 +244,7 @@ class PlaybackManager:
                 DEFAULT_VOLUME_RAMP_ENABLED,
             )
         )
-        ramp_start = float(
-            self._option(entry, CONF_VOLUME_RAMP_START, DEFAULT_VOLUME_RAMP_START)
-        )
+        ramp_start = float(self._option(entry, CONF_VOLUME_RAMP_START, DEFAULT_VOLUME_RAMP_START))
         ramp_seconds = float(
             self._option(
                 entry,
@@ -270,9 +260,7 @@ class PlaybackManager:
         try:
             if ramp_enabled:
                 start_volume = min(ramp_start, target_volume)
-                await self._async_set_volume(
-                    active.media_player_entity_id, start_volume
-                )
+                await self._async_set_volume(active.media_player_entity_id, start_volume)
                 active.ramp_task = self.hass.async_create_task(
                     self._async_ramp_volume(
                         active,
@@ -283,9 +271,7 @@ class PlaybackManager:
                     f"{DOMAIN} volume ramp {active.alarm_id}",
                 )
             else:
-                await self._async_set_volume(
-                    active.media_player_entity_id, target_volume
-                )
+                await self._async_set_volume(active.media_player_entity_id, target_volume)
 
             while True:
                 try:
@@ -317,13 +303,9 @@ class PlaybackManager:
         entry = self._entry(record.endpoint_entry_id)
         endpoint = AlarmEndpoint.from_config_entry(entry)
 
-        if not self.hass.services.has_service(
-            ASSIST_SATELLITE_DOMAIN, ASSIST_SATELLITE_ANNOUNCE
-        ):
+        if not self.hass.services.has_service(ASSIST_SATELLITE_DOMAIN, ASSIST_SATELLITE_ANNOUNCE):
             raise PlaybackError("assist_satellite.announce is not available")
-        if not self.hass.services.has_service(
-            MEDIA_PLAYER_DOMAIN, MEDIA_PLAYER_VOLUME_SET
-        ):
+        if not self.hass.services.has_service(MEDIA_PLAYER_DOMAIN, MEDIA_PLAYER_VOLUME_SET):
             raise PlaybackError("media_player.volume_set is not available")
 
         player_state = self.hass.states.get(endpoint.media_player_entity_id)
@@ -337,9 +319,7 @@ class PlaybackManager:
 
         previous_volume_raw = player_state.attributes.get(ATTR_VOLUME_LEVEL)
         previous_volume = (
-            float(previous_volume_raw)
-            if isinstance(previous_volume_raw, int | float)
-            else None
+            float(previous_volume_raw) if isinstance(previous_volume_raw, int | float) else None
         )
 
         async with self._lock:
