@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run Hassfest
-        uses: home-assistant/actions/hassfest@f6f29a7ee3fa0eccadf3620a7b9ee00ab54ec03b
+        uses: home-assistant/actions/hassfest@06749dd8c0b54f350bc69c8752456cee498808a3
 
   hacs:
     name: HACS
