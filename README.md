@@ -15,7 +15,7 @@ The initial use case is a house with multiple voice satellites—such as EchoMus
 
 The alarm should belong to that room and ring only on that room's configured speaker.
 
-> **Project status:** v0.2 development. Endpoint configuration and Scheduler-backed alarm management are implemented. Alarm audio, stop/snooze playback control, and voice commands are not implemented yet.
+> **Project status:** v0.3 development. Scheduler-backed alarms, room-local ringing, stop/snooze, volume save/restore, and volume ramping are implemented. Native voice commands are not implemented yet.
 
 ## Goals
 
@@ -86,7 +86,7 @@ Satellite Alarms is designed on top of [Scheduler Component](https://github.com/
 
 Development begins against Scheduler Component 3.x (currently 3.3.8). The dependency will be isolated behind a scheduler adapter so it can be changed later without rewriting the alarm/voice layers.
 
-## Current v0.2 actions
+## Current actions
 
 The v0.2 service layer provides:
 
@@ -97,6 +97,8 @@ assist_satellite_alarms.delete
 assist_satellite_alarms.enable
 assist_satellite_alarms.disable
 assist_satellite_alarms.fire
+assist_satellite_alarms.stop
+assist_satellite_alarms.snooze
 ```
 
 Example one-time alarm:
@@ -120,7 +122,54 @@ data:
   name: Work
 ```
 
-`create` returns the stable alarm ID and Scheduler entity mapping when a response is requested. Scheduler Component owns the actual persistent schedule. The internal `fire` action currently emits a room-targeted Home Assistant event; v0.3 will connect that callback to alarm playback.
+`create` returns the stable alarm ID and Scheduler entity mapping when a response is requested. Scheduler Component owns the actual persistent schedule. The internal `fire` action now starts room-local alarm playback through the configured Assist satellite and media player.
+
+### Stop and snooze
+
+While an alarm is ringing, it can be stopped by stable alarm ID:
+
+```yaml
+action: assist_satellite_alarms.stop
+data:
+  alarm_id: <alarm UUID>
+```
+
+or by configured endpoint:
+
+```yaml
+action: assist_satellite_alarms.stop
+data:
+  endpoint_id: <Satellite Alarms config entry ID>
+```
+
+Snooze accepts the same selector and an optional duration:
+
+```yaml
+action: assist_satellite_alarms.snooze
+data:
+  endpoint_id: <Satellite Alarms config entry ID>
+  minutes: 10
+```
+
+Snooze creates a temporary one-time Scheduler Component occurrence tied to the parent alarm. It does not alter the parent recurring schedule or create another normal alarm record.
+
+### Playback defaults
+
+Each endpoint can be configured with:
+
+- default alarm volume
+- default snooze duration
+- gradual volume ramp and ramp duration
+- maximum ring duration
+- bundled two-tone alarm MP3 (default)
+- optional custom alarm media
+- spoken fallback alarm message
+
+The default alarm sound is a bundled 4-second two-tone MP3 generated specifically for this project (alternating 740 Hz / 980 Hz pulses, mono, 64 kbps). It is served locally by Home Assistant and repeated with no preannounce chime.
+
+A custom endpoint media URL/media-source ID can replace the bundled tone. If alarm media is explicitly cleared, the integration falls back to a short spoken `Alarm` announcement.
+
+The integration saves the media player's current volume before ringing and restores it after stop, snooze, or timeout. v0.3 does not attempt to restore the previous media session/source.
 
 ## Initial feature set
 
@@ -239,7 +288,7 @@ The internal file layout may change as the implementation develops.
 
 There is not yet a tagged public release. For development testing, install and configure Scheduler Component first, then install this repository as a HACS custom integration and add each satellite endpoint through Home Assistant's normal integration config flow.
 
-Until v0.3, scheduled alarms can be created and triggered through Scheduler Component, but they do not yet play alarm audio.
+On the v0.3 development branch, scheduled alarms ring through the configured Assist satellite. Stop and snooze are available through Home Assistant actions; voice control arrives in v0.4.
 
 ## Contributing
 

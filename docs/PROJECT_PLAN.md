@@ -391,7 +391,7 @@ tags:
   - assist_satellite_alarms:<stable-alarm-uuid>
 ```
 
-The `fire` action resolves the owning Satellite Alarms endpoint and emits the target Assist satellite and media player. v0.3 will use that callback to start playback.
+The `fire` action resolves the owning Satellite Alarms endpoint and starts the Playback Manager for the target Assist satellite and media player.
 
 ### One-time alarms
 
@@ -553,7 +553,7 @@ Possible initial rule:
 2. Other due alarms are coalesced or queued.
 3. Behavior is logged.
 
-Exact policy should be finalized before v0.3.
+v0.3 policy: the first active alarm keeps ownership of the endpoint. A second alarm attempting to ring on the same endpoint is rejected rather than overlapping playback. Different endpoints remain independent.
 
 ---
 
@@ -920,6 +920,26 @@ Success criteria:
 - Stop/snooze affects only the specified endpoint/alarm.
 - Previous volume is restored reliably.
 
+#### v0.3 implementation status
+
+Implemented in the v0.3 development branch:
+
+- one active ringing alarm per endpoint
+- simultaneous independent ringing across different endpoints
+- save/set/restore media-player volume
+- optional bounded gradual volume ramp
+- repeated `assist_satellite.announce` playback
+- optional endpoint alarm media
+- spoken fallback alarm message when no media is configured
+- maximum ring duration
+- `assist_satellite_alarms.stop`
+- `assist_satellite_alarms.snooze`
+- transient one-time Scheduler snooze occurrences tied to the parent alarm
+- one-time alarm metadata cleanup after stop/timeout
+- best-effort media stop and volume restore during unload/shutdown
+
+Snooze preserves the parent alarm definition. Repeated snoozes do not create additional normal alarm records.
+
 ### v0.4 — Home Assistant Assist voice support
 
 Deliverables:
@@ -1095,13 +1115,12 @@ At minimum, development should test:
 These should be resolved through implementation/testing rather than guessed up front:
 
 1. Best Home Assistant API path for receiving originating Assist satellite context inside a custom integration.
-2. Best generic method for repeating alarm audio across different media-player platforms.
-3. Whether to restore prior media playback in addition to volume.
-4. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
-5. How alarm entities should be represented without creating entity clutter.
-6. Whether pre/post actions should be scripts, generic actions, or events.
-7. Whether alarm audio should use `media_player.play_media`, `assist_satellite.announce`, or a configurable playback strategy.
-8. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
+2. Whether to restore prior media playback in addition to volume.
+3. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
+4. How alarm entities should be represented without creating entity clutter.
+5. Whether pre/post actions should be scripts, generic actions, or events.
+6. Whether a future configurable playback strategy should supplement the current `assist_satellite.announce` path.
+7. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
 
 ---
 

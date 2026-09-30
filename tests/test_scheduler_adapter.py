@@ -1,5 +1,7 @@
 """Tests for the Scheduler Component adapter."""
 
+from datetime import datetime
+
 import pytest
 from homeassistant.const import SERVICE_TURN_OFF, SERVICE_TURN_ON
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -82,6 +84,26 @@ def test_build_schedule_payload(
         }
     ]
     assert payload["name"] == "Assist Satellite Alarm abc123"
+
+
+def test_build_snooze_payload() -> None:
+    """Snooze should create a transient single schedule tied to its parent."""
+    payload = SchedulerAdapter.build_snooze_payload(
+        alarm_id="abc123",
+        occurrence_id="snooze456",
+        trigger_at=datetime.fromisoformat("2099-09-30T06:40:00-04:00"),
+    )
+
+    assert payload["repeat_type"] == "single"
+    assert payload["start_date"] == "2099-09-30"
+    assert payload["end_date"] == "2099-09-30"
+    assert payload["timeslots"][0]["start"] == "06:40:00"
+    assert payload["timeslots"][0]["actions"][0] == {
+        "service": f"{DOMAIN}.fire",
+        "service_data": {"alarm_id": "abc123"},
+    }
+    assert f"{DOMAIN}:snooze:snooze456" in payload["tags"]
+    assert f"{DOMAIN}:parent:abc123" in payload["tags"]
 
 
 def test_one_time_schedule_requires_date() -> None:

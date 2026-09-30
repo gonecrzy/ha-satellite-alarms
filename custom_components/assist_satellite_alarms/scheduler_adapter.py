@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
+from uuid import uuid4
 
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_OFF, SERVICE_TURN_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from .const import (
@@ -121,6 +124,40 @@ class SchedulerAdapter:
             payload["name"] = cls.schedule_name(alarm_id)
         return payload
 
+    @classmethod
+    def build_snooze_payload(
+        cls,
+        *,
+        alarm_id: str,
+        occurrence_id: str,
+        trigger_at,
+    ) -> dict[str, Any]:
+        """Build a transient one-time schedule for a snoozed occurrence."""
+        date = trigger_at.date().isoformat()
+        return {
+            "name": f"Assist Satellite Alarm Snooze {occurrence_id}",
+            "weekdays": [_SCHEDULER_DAILY],
+            "start_date": date,
+            "end_date": date,
+            "timeslots": [
+                {
+                    "start": trigger_at.strftime("%H:%M:%S"),
+                    "actions": [
+                        {
+                            "service": f"{DOMAIN}.fire",
+                            "service_data": {ATTR_ALARM_ID: alarm_id},
+                        }
+                    ],
+                }
+            ],
+            "repeat_type": _SINGLE,
+            "tags": [
+                DOMAIN,
+                f"{DOMAIN}:snooze:{occurrence_id}",
+                f"{DOMAIN}:parent:{alarm_id}",
+            ],
+        }
+
     async def async_create_schedule(
         self, *, alarm_id: str, time: str, recurrence: str, date: str | None
     ) -> str:
@@ -139,6 +176,24 @@ class SchedulerAdapter:
             blocking=True,
         )
         return self.expected_entity_id(alarm_id)
+
+    async def async_create_snooze_schedule(self, *, alarm_id: str, minutes: int) -> str:
+        """Create a transient Scheduler schedule for a snoozed occurrence."""
+        self.ensure_ready()
+        occurrence_id = uuid4().hex
+        trigger_at = dt_util.now() + timedelta(minutes=minutes)
+        payload = self.build_snooze_payload(
+            alarm_id=alarm_id,
+            occurrence_id=occurrence_id,
+            trigger_at=trigger_at,
+        )
+        await self.hass.services.async_call(
+            SCHEDULER_DOMAIN,
+            SERVICE_ADD,
+            payload,
+            blocking=True,
+        )
+        return f"switch.schedule_{slugify(payload['name'])}"
 
     async def async_update_schedule(
         self,

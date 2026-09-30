@@ -16,10 +16,13 @@ from .const import (
     ATTR_ALARM_ID,
     ATTR_DATE,
     ATTR_ENDPOINT_ID,
+    ATTR_MINUTES,
     ATTR_RECURRENCE,
     ATTR_TIME,
     CONF_NAME,
     DOMAIN,
+    EVENT_ALARM_SNOOZED,
+    EVENT_ALARM_STOPPED,
     EVENT_ALARM_TRIGGERED,
     RECURRENCE_ONCE,
     RECURRENCES,
@@ -28,8 +31,11 @@ from .const import (
     SERVICE_DISABLE,
     SERVICE_ENABLE,
     SERVICE_FIRE,
+    SERVICE_SNOOZE,
+    SERVICE_STOP,
     SERVICE_UPDATE,
 )
+from .playback import PlaybackError, PlaybackManager
 
 
 def _validate_time(value: Any) -> str:
@@ -50,6 +56,14 @@ def _validate_date(value: Any) -> str:
     if parsed is None:
         raise vol.Invalid("Invalid alarm date")
     return parsed.isoformat()
+
+
+def _validate_active_selector(data: dict[str, Any]) -> dict[str, Any]:
+    """Require exactly one active-alarm selector."""
+    selectors = [key for key in (ATTR_ALARM_ID, ATTR_ENDPOINT_ID) if data.get(key)]
+    if len(selectors) != 1:
+        raise vol.Invalid("Provide exactly one of alarm_id or endpoint_id")
+    return data
 
 
 CREATE_SCHEMA = vol.Schema(
@@ -74,13 +88,38 @@ UPDATE_SCHEMA = vol.Schema(
 
 ALARM_ID_SCHEMA = vol.Schema({vol.Required(ATTR_ALARM_ID): cv.string})
 
+ACTIVE_ALARM_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_ALARM_ID): cv.string,
+            vol.Optional(ATTR_ENDPOINT_ID): cv.string,
+        }
+    ),
+    _validate_active_selector,
+)
+
+SNOOZE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_ALARM_ID): cv.string,
+            vol.Optional(ATTR_ENDPOINT_ID): cv.string,
+            vol.Optional(ATTR_MINUTES): vol.All(vol.Coerce(int), vol.Range(min=1, max=120)),
+        }
+    ),
+    _validate_active_selector,
+)
+
 
 def _service_error(err: Exception) -> ServiceValidationError:
-    """Convert manager validation errors to Home Assistant service errors."""
+    """Convert manager/playback validation errors to Home Assistant service errors."""
     return ServiceValidationError(str(err))
 
 
-async def async_register_services(hass: HomeAssistant, manager: AlarmManager) -> None:
+async def async_register_services(
+    hass: HomeAssistant,
+    manager: AlarmManager,
+    playback: PlaybackManager,
+) -> None:
     """Register Satellite Alarms service actions once."""
     if hass.services.has_service(DOMAIN, SERVICE_CREATE):
         return
@@ -134,12 +173,57 @@ async def async_register_services(hass: HomeAssistant, manager: AlarmManager) ->
         return {**manager.response(record), "enabled": False}
 
     async def async_fire(call: ServiceCall) -> dict[str, object]:
+        alarm_id = call.data[ATTR_ALARM_ID]
         try:
-            event_data = manager.fire_event_data(call.data[ATTR_ALARM_ID])
-        except (AlarmNotFoundError, EndpointNotFoundError, ValueError) as err:
+            event_data = manager.fire_event_data(alarm_id)
+            await playback.async_start(alarm_id)
+        except (
+            AlarmNotFoundError,
+            EndpointNotFoundError,
+            PlaybackError,
+            ValueError,
+        ) as err:
             raise _service_error(err) from err
+
         hass.bus.async_fire(EVENT_ALARM_TRIGGERED, event_data)
-        return event_data
+        return {**event_data, "ringing": True}
+
+    async def async_stop(call: ServiceCall) -> dict[str, object]:
+        try:
+            active = await playback.async_stop(
+                alarm_id=call.data.get(ATTR_ALARM_ID),
+                endpoint_id=call.data.get(ATTR_ENDPOINT_ID),
+            )
+        except PlaybackError as err:
+            raise _service_error(err) from err
+
+        response = {
+            "alarm_id": active.alarm_id,
+            "endpoint_id": active.endpoint_entry_id,
+            "stopped": True,
+        }
+        hass.bus.async_fire(EVENT_ALARM_STOPPED, response)
+        return response
+
+    async def async_snooze(call: ServiceCall) -> dict[str, object]:
+        try:
+            active, minutes, snooze_entity_id = await playback.async_snooze(
+                alarm_id=call.data.get(ATTR_ALARM_ID),
+                endpoint_id=call.data.get(ATTR_ENDPOINT_ID),
+                minutes=call.data.get(ATTR_MINUTES),
+            )
+        except PlaybackError as err:
+            raise _service_error(err) from err
+
+        response = {
+            "alarm_id": active.alarm_id,
+            "endpoint_id": active.endpoint_entry_id,
+            "minutes": minutes,
+            "scheduler_entity_id": snooze_entity_id,
+            "snoozed": True,
+        }
+        hass.bus.async_fire(EVENT_ALARM_SNOOZED, response)
+        return response
 
     hass.services.async_register(
         DOMAIN,
@@ -181,5 +265,19 @@ async def async_register_services(hass: HomeAssistant, manager: AlarmManager) ->
         SERVICE_FIRE,
         async_fire,
         schema=ALARM_ID_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_STOP,
+        async_stop,
+        schema=ACTIVE_ALARM_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SNOOZE,
+        async_snooze,
+        schema=SNOOZE_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
