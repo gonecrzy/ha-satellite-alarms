@@ -54,7 +54,6 @@ async def test_setup_registers_services_and_loads_endpoint(hass: HomeAssistant) 
     assert entry.runtime_data.media_player_entity_id == "media_player.bedroom"
 
 
-
 def test_bundled_alarm_mp3_exists() -> None:
     """The default alarm media must be shipped with the integration."""
     media_path = (
