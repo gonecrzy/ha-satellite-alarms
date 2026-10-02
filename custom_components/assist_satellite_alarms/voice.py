@@ -186,9 +186,7 @@ class VoiceController:
         self, recurrence: str, *, date_offset: int | None
     ) -> Callable[[ConversationInput, RecognizeResult], Awaitable[str]]:
         """Return a sentence-trigger callback for one recurrence."""
-        async def callback(
-            user_input: ConversationInput, result: RecognizeResult
-        ) -> str:
+        async def callback(user_input: ConversationInput, result: RecognizeResult) -> str:
             return await self.async_create_alarm(
                 user_input,
                 result,
@@ -225,9 +223,7 @@ class VoiceController:
             if len(matches) == 1:
                 return matches[0].entry_id
 
-        raise VoiceCommandError(
-            "I couldn't match this voice satellite to a Satellite Alarms room."
-        )
+        raise VoiceCommandError("I couldn't match this voice satellite to a Satellite Alarms room.")
 
     @staticmethod
     def _slot(result: RecognizeResult, name: str) -> str:
@@ -251,9 +247,7 @@ class VoiceController:
             time_value = parse_alarm_time(self._slot(result, "time"))
             date_value = None
             if date_offset is not None:
-                date_value = (
-                    dt_util.now().date() + timedelta(days=date_offset)
-                ).isoformat()
+                date_value = (dt_util.now().date() + timedelta(days=date_offset)).isoformat()
 
             record = await self.manager.async_create(
                 endpoint_id=endpoint_id,
@@ -275,9 +269,7 @@ class VoiceController:
         }[recurrence]
         return f"Alarm set for {format_clock_time(str(record.metadata['time']))}{suffix}."
 
-    async def async_stop(
-        self, user_input: ConversationInput, _result: RecognizeResult
-    ) -> str:
+    async def async_stop(self, user_input: ConversationInput, _result: RecognizeResult) -> str:
         """Stop the alarm ringing on the originating endpoint."""
         try:
             endpoint_id = self.resolve_endpoint_id(user_input)
@@ -291,15 +283,11 @@ class VoiceController:
             return "I couldn't stop the alarm."
         return "Alarm stopped."
 
-    async def async_snooze(
-        self, user_input: ConversationInput, _result: RecognizeResult
-    ) -> str:
+    async def async_snooze(self, user_input: ConversationInput, _result: RecognizeResult) -> str:
         """Snooze using the endpoint default duration."""
         return await self._async_snooze(user_input, minutes=None)
 
-    async def async_snooze_for(
-        self, user_input: ConversationInput, result: RecognizeResult
-    ) -> str:
+    async def async_snooze_for(self, user_input: ConversationInput, result: RecognizeResult) -> str:
         """Snooze using a spoken duration."""
         try:
             minutes = parse_snooze_minutes(self._slot(result, "duration"))
@@ -307,9 +295,7 @@ class VoiceController:
             return str(err)
         return await self._async_snooze(user_input, minutes=minutes)
 
-    async def _async_snooze(
-        self, user_input: ConversationInput, *, minutes: int | None
-    ) -> str:
+    async def _async_snooze(self, user_input: ConversationInput, *, minutes: int | None) -> str:
         """Snooze the alarm ringing on the originating endpoint."""
         try:
             endpoint_id = self.resolve_endpoint_id(user_input)
@@ -450,8 +436,10 @@ def parse_alarm_time(value: str) -> str:
         if not 1 <= hour <= 12:
             raise VoiceCommandError("I couldn't understand the alarm time.")
         hour = (
-            0 if hour == 12 else hour
-        ) if meridiem == "am" else (12 if hour == 12 else hour + 12)
+            (0 if hour == 12 else hour)
+            if meridiem == "am"
+            else (12 if hour == 12 else hour + 12)
+        )
     elif not 0 <= hour <= 23:
         raise VoiceCommandError("I couldn't understand the alarm time.")
 
