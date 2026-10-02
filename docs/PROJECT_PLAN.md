@@ -553,7 +553,7 @@ Possible initial rule:
 2. Other due alarms are coalesced or queued.
 3. Behavior is logged.
 
-v0.3 policy: the first active alarm keeps ownership of the endpoint. A second alarm attempting to ring on the same endpoint is rejected rather than overlapping playback. Different endpoints remain independent.
+v0.5 policy: the first active alarm keeps ownership of the endpoint. Additional due alarms for the same endpoint are queued in trigger order and begin after the active alarm finishes. Different endpoints remain independent. Queued alarms are discarded on endpoint unload or Home Assistant shutdown.
 
 ---
 
@@ -826,8 +826,10 @@ Repeat/loop behavior may differ by media player. The playback manager should pre
 
 ### v0.5 restrictions
 
-- Named/multiple alarm support expands, but arbitrary natural-language scheduling may still be out of scope.
-- Selected weekdays supported explicitly rather than free-form recurrence rules.
+- Named/multiple alarm support is deterministic; arbitrary natural-language scheduling remains out of scope.
+- Selected weekdays are explicit weekday names rather than free-form recurrence rules.
+- Name matching is exact and case-insensitive.
+- Time-based cancel/query refuses to choose when more than one room-local alarm shares that time.
 
 ### v1.0 target
 
@@ -996,6 +998,25 @@ Example:
 Set an alarm called work for 6:30 on Monday, Wednesday, and Friday.
 ```
 
+#### v0.5 implementation status
+
+Implemented in the v0.5 development branch:
+
+- multiple alarms per endpoint
+- stable alarm names alongside UUID identity
+- `assist_satellite_alarms.list` action with endpoint filtering
+- exact case-insensitive alarm lookup by name
+- alarm lookup by normalized clock time with ambiguity protection
+- selected weekday recurrence using Scheduler's `mon` through `sun` values
+- service create/update support for explicit `days`
+- voice creation such as `Set a work alarm for 6:30 on Monday Wednesday and Friday`
+- room-local `What alarms do I have?`
+- room-local query by name
+- room-local cancel by name or time
+- deterministic same-room queueing when multiple alarms become due while one is already ringing
+
+Scheduler Component continues to own actual recurrence execution and next-trigger calculation.
+
 ### v0.6 — Advanced wake behavior
 
 Deliverables:
@@ -1132,13 +1153,14 @@ At minimum, development should test:
 
 These should be resolved through implementation/testing rather than guessed up front:
 
-1. Whether to restore prior media playback in addition to volume.
-2. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
-3. How alarm entities should be represented without creating entity clutter.
-4. Whether pre/post actions should be scripts, generic actions, or events.
-5. Whether a future configurable playback strategy should supplement the current `assist_satellite.announce` path.
-6. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
-7. Whether bare `Stop` can be implemented without stealing unrelated stop commands when no alarm is active.
+1. Whether named alarm creation should eventually enforce unique names per endpoint or continue allowing duplicates with explicit disambiguation.
+2. Whether to restore prior media playback in addition to volume.
+3. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
+4. How alarm entities should be represented without creating entity clutter.
+5. Whether pre/post actions should be scripts, generic actions, or events.
+6. Whether a future configurable playback strategy should supplement the current `assist_satellite.announce` path.
+7. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
+8. Whether bare `Stop` can be implemented without stealing unrelated stop commands when no alarm is active.
 
 ---
 
