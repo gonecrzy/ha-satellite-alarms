@@ -193,7 +193,7 @@ async def async_register_services(
         alarm_id = call.data[ATTR_ALARM_ID]
         try:
             event_data = manager.fire_event_data(alarm_id)
-            await playback.async_start(alarm_id)
+            _active, queued = await playback.async_start_or_queue(alarm_id)
         except (
             AlarmNotFoundError,
             EndpointNotFoundError,
@@ -202,8 +202,9 @@ async def async_register_services(
         ) as err:
             raise _service_error(err) from err
 
-        hass.bus.async_fire(EVENT_ALARM_TRIGGERED, event_data)
-        return {**event_data, "ringing": True}
+        result = {**event_data, "ringing": not queued, "queued": queued}
+        hass.bus.async_fire(EVENT_ALARM_TRIGGERED, result)
+        return result
 
     async def async_stop(call: ServiceCall) -> dict[str, object]:
         try:
