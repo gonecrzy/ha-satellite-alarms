@@ -162,9 +162,7 @@ class VoiceController:
         while self._unregister:
             self._unregister.pop()()
 
-    async def async_create(
-        self, user_input: ConversationInput, result: RecognizeResult
-    ) -> str:
+    async def async_create(self, user_input: ConversationInput, result: RecognizeResult) -> str:
         """Classify and create an alarm from one deterministic voice trigger."""
         text = _normalize_spoken_text(user_input.text)
 
@@ -278,9 +276,7 @@ class VoiceController:
             return "I couldn't stop the alarm."
         return "Alarm stopped."
 
-    async def async_snooze(
-        self, user_input: ConversationInput, result: RecognizeResult
-    ) -> str:
+    async def async_snooze(self, user_input: ConversationInput, result: RecognizeResult) -> str:
         """Snooze using the endpoint default or a spoken duration."""
         minutes = None
         if result.entities.get("duration") is not None:
@@ -462,9 +458,7 @@ def parse_alarm_time(value: str) -> str:
         if not 1 <= hour <= 12:
             raise VoiceCommandError("I couldn't understand the alarm time.")
         hour = (
-            (0 if hour == 12 else hour)
-            if meridiem == "am"
-            else (12 if hour == 12 else hour + 12)
+            (0 if hour == 12 else hour) if meridiem == "am" else (12 if hour == 12 else hour + 12)
         )
     elif not 0 <= hour <= 23:
         raise VoiceCommandError("I couldn't understand the alarm time.")
