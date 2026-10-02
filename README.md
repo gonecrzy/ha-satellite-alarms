@@ -15,7 +15,7 @@ The initial use case is a house with multiple voice satellites—such as EchoMus
 
 The alarm should belong to that room and ring only on that room's configured speaker.
 
-> **Project status:** v0.3 development. Scheduler-backed alarms, room-local ringing, stop/snooze, volume save/restore, and volume ramping are implemented. Native voice commands are not implemented yet.
+> **Project status:** v0.4 development. Scheduler-backed alarms, room-local ringing, stop/snooze, volume handling, and deterministic Home Assistant Assist voice commands are implemented.
 
 ## Goals
 
@@ -88,7 +88,7 @@ Development begins against Scheduler Component 3.x (currently 3.3.8). The depend
 
 ## Current actions
 
-The v0.2 service layer provides:
+The service layer provides:
 
 ```text
 assist_satellite_alarms.create
@@ -191,20 +191,33 @@ The first usable release is intended to support:
 
 See [Project Plan](docs/PROJECT_PLAN.md) for the proposed architecture, restrictions, data model, and version roadmap.
 
-## Planned voice examples
+## Voice control
+
+v0.4 registers deterministic Home Assistant conversation sentence triggers. They are handled locally before the configured conversation agent, so the core alarm phrases do not require an LLM even when a ChatGPT, Gemini, or other conversation agent is selected.
+
+Supported English examples include:
 
 ```text
 Set an alarm for 6 AM.
+Set an alarm for 6:30 tomorrow.
+Wake me at 6:30.
 Set a daily alarm for 8 AM.
 Wake me at 6:30 on weekdays.
+Set a weekend alarm for 8 AM.
 What time is my next alarm?
-Cancel my alarm.
-Stop.
+Cancel my next alarm.
+Stop the alarm.
 Snooze.
 Snooze for 15 minutes.
 ```
 
-Later versions may add named alarms, selected weekdays, skip-next, temporary overrides, pre/post alarm actions, morning briefings, fallback speakers, and richer dashboard controls.
+The originating `assist_satellite` is matched directly to the configured Satellite Alarms endpoint. If Home Assistant supplies only the originating device ID, the integration uses the configured satellite entity's device as a fallback. If neither path uniquely identifies an endpoint, the integration refuses to guess a room.
+
+Common spoken clock forms such as `6 AM`, `6:30 PM`, `six thirty`, `six oh five`, `noon`, and `midnight` are parsed deterministically. One-time alarms without an explicit day use the next future occurrence; `today` and `tomorrow` are also supported.
+
+Bare `Stop` is intentionally not registered yet because a global sentence trigger would also intercept unrelated media stop commands when no alarm is ringing. Use `Stop the alarm` or `Dismiss the alarm` in v0.4.
+
+Later versions may add named alarms, selected weekdays, richer multi-alarm disambiguation, skip-next, temporary overrides, pre/post alarm actions, morning briefings, fallback speakers, and richer dashboard controls.
 
 ## Design principles
 
@@ -288,7 +301,7 @@ The internal file layout may change as the implementation develops.
 
 There is not yet a tagged public release. For development testing, install and configure Scheduler Component first, then install this repository as a HACS custom integration and add each satellite endpoint through Home Assistant's normal integration config flow.
 
-On the v0.3 development branch, scheduled alarms ring through the configured Assist satellite. Stop and snooze are available through Home Assistant actions; voice control arrives in v0.4.
+On the v0.4 development branch, scheduled alarms ring through the configured Assist satellite and the documented English alarm phrases can create, query, cancel, stop, and snooze alarms from the originating satellite.
 
 ## Contributing
 

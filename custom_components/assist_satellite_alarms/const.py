@@ -36,6 +36,7 @@ DATA_REGISTRY: Final = "registry"
 DATA_SCHEDULER_ADAPTER: Final = "scheduler_adapter"
 DATA_ALARM_MANAGER: Final = "alarm_manager"
 DATA_PLAYBACK_MANAGER: Final = "playback_manager"
+DATA_VOICE_CONTROLLER: Final = "voice_controller"
 DATA_RECONCILED: Final = "reconciled"
 
 STORAGE_KEY: Final = f"{DOMAIN}.registry"

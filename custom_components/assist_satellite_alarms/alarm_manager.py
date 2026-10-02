@@ -257,6 +257,33 @@ class AlarmManager:
 
         return matched, missing
 
+    def next_alarm_for_endpoint(self, endpoint_id: str):
+        """Return the next Scheduler-backed alarm for an endpoint."""
+        self._endpoint(endpoint_id)
+        candidates = []
+        for record in self.registry.for_endpoint(endpoint_id):
+            entity_id = self.scheduler.find_entity_id(record.alarm_id) or record.scheduler_entity_id
+            if entity_id is None:
+                continue
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state != "on":
+                continue
+            next_trigger = self.scheduler.next_trigger(entity_id)
+            if not next_trigger:
+                continue
+            trigger = dt_util.parse_datetime(str(next_trigger))
+            if trigger is None:
+                continue
+            if trigger.tzinfo is None:
+                trigger = trigger.replace(tzinfo=dt_util.now().tzinfo)
+            candidates.append((trigger, record))
+
+        if not candidates:
+            return None
+
+        trigger, record = min(candidates, key=lambda item: item[0])
+        return record, trigger
+
     def response(self, record: AlarmRecord) -> dict[str, object]:
         """Build a service response for an alarm."""
         entity_id = self.scheduler.find_entity_id(record.alarm_id) or record.scheduler_entity_id

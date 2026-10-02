@@ -288,3 +288,33 @@ async def test_runtime_scheduler_rename_is_resolved_by_tag(hass: HomeAssistant) 
 
     assert calls[0][0] == "edit"
     assert calls[0][1]["entity_id"] == renamed_entity_id
+
+
+async def test_next_alarm_for_endpoint_uses_scheduler_next_trigger(
+    hass: HomeAssistant,
+) -> None:
+    """Next-alarm lookup should use Scheduler Component as its source of truth."""
+    entry = _add_endpoint(hass)
+    manager, _ = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="07:00:00",
+        recurrence=RECURRENCE_DAILY,
+    )
+
+    entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2099-09-30T07:00:00-04:00",
+        },
+    )
+
+    next_alarm = manager.next_alarm_for_endpoint(entry.entry_id)
+
+    assert next_alarm is not None
+    next_record, trigger = next_alarm
+    assert next_record.alarm_id == record.alarm_id
+    assert trigger.isoformat() == "2099-09-30T07:00:00-04:00"

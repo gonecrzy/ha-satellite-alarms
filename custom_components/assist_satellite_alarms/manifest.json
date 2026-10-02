@@ -6,6 +6,7 @@
   ],
   "config_flow": true,
   "dependencies": [
+    "conversation",
     "http",
     "scheduler"
   ],
@@ -14,5 +15,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/gonecrzy/ha-satellite-alarms/issues",
   "requirements": [],
-  "version": "0.3.0"
+  "version": "0.4.0"
 }

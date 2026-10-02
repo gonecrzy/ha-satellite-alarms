@@ -569,7 +569,7 @@ The voice layer needs to resolve:
 - originating Assist satellite
 - associated alarm endpoint
 
-### Proposed v0.4 commands
+### v0.4 commands
 
 ```text
 Set an alarm for 6 AM.
@@ -578,20 +578,18 @@ Set a daily alarm for 8 AM.
 Wake me at 6:30 on weekdays.
 
 What time is my next alarm?
-Cancel my alarm.
-Disable my alarm.
-Enable my alarm.
+Cancel my next alarm.
 
-Stop.
+Stop the alarm.
 Snooze.
 Snooze for 15 minutes.
 ```
 
 ### Originating satellite
 
-When Home Assistant exposes originating satellite context to the intent/sentence path, that context should be the default endpoint selector.
+Home Assistant's conversation input exposes the originating `satellite_id` and `device_id`. v0.4 matches `satellite_id` directly to the configured endpoint and uses the configured satellite entity's device ID only as a fallback.
 
-Fallback behavior when the originating satellite cannot be resolved must be conservative:
+Fallback behavior when the originating satellite cannot be resolved remains conservative:
 
 - do not guess a room
 - ask for a room or return a clear error
@@ -961,6 +959,26 @@ Success criteria:
 
 spoken in Bedroom creates a Bedroom alarm without saying "Bedroom."
 
+#### v0.4 implementation status
+
+Implemented in the v0.4 development branch:
+
+- deterministic English Home Assistant sentence triggers
+- originating-`assist_satellite` endpoint routing
+- originating-device fallback when `satellite_id` is unavailable
+- one-time alarm creation using next-occurrence semantics
+- explicit `today` and `tomorrow` alarm creation
+- daily, weekday, and weekend alarm creation
+- deterministic spoken-time parsing
+- room-local next-alarm query using Scheduler Component's `next_trigger`
+- room-local cancellation of the next scheduled alarm
+- room-local stop with `Stop the alarm` / `Dismiss the alarm`
+- room-local default and explicit-duration snooze
+- spoken confirmations and conservative routing errors
+- local sentence triggers that run before an external conversation agent
+
+Bare `Stop` remains deferred because a permanently registered global sentence trigger would intercept unrelated media stop commands even when no Satellite Alarm is ringing. Named alarm management and selected weekdays remain v0.5 work.
+
 ### v0.5 — Multiple and named alarms
 
 Deliverables:
@@ -1114,13 +1132,13 @@ At minimum, development should test:
 
 These should be resolved through implementation/testing rather than guessed up front:
 
-1. Best Home Assistant API path for receiving originating Assist satellite context inside a custom integration.
-2. Whether to restore prior media playback in addition to volume.
-3. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
-4. How alarm entities should be represented without creating entity clutter.
-5. Whether pre/post actions should be scripts, generic actions, or events.
-6. Whether a future configurable playback strategy should supplement the current `assist_satellite.announce` path.
-7. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
+1. Whether to restore prior media playback in addition to volume.
+2. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
+3. How alarm entities should be represented without creating entity clutter.
+4. Whether pre/post actions should be scripts, generic actions, or events.
+5. Whether a future configurable playback strategy should supplement the current `assist_satellite.announce` path.
+6. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
+7. Whether bare `Stop` can be implemented without stealing unrelated stop commands when no alarm is active.
 
 ---
 
@@ -1145,7 +1163,7 @@ Ten minutes later:
 Bedroom rings again.
 
 Bedroom:
-"Stop."
+"Stop the alarm."
 
 Living room's alarm configuration remains untouched.
 ```
