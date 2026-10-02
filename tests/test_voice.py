@@ -14,6 +14,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.assist_satellite_alarms.alarm_manager import AlarmManager
 from custom_components.assist_satellite_alarms.const import (
+    CONF_ADDITIONAL_PLAYBACK_TARGETS,
     CONF_ASSIST_SATELLITE,
     CONF_MEDIA_PLAYER,
     CONF_NAME,
@@ -36,7 +37,11 @@ from custom_components.assist_satellite_alarms.voice import (
 )
 
 
-def _add_endpoint(hass: HomeAssistant) -> MockConfigEntry:
+def _add_endpoint(
+    hass: HomeAssistant,
+    *,
+    additional_targets: list[dict] | None = None,
+) -> MockConfigEntry:
     """Add a configured Bedroom endpoint."""
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -45,6 +50,7 @@ def _add_endpoint(hass: HomeAssistant) -> MockConfigEntry:
             CONF_NAME: "Bedroom",
             CONF_ASSIST_SATELLITE: "assist_satellite.bedroom",
             CONF_MEDIA_PLAYER: "media_player.bedroom",
+            CONF_ADDITIONAL_PLAYBACK_TARGETS: additional_targets or [],
         },
         entry_id="bedroom-entry",
     )
@@ -560,3 +566,30 @@ async def test_conversation_trigger_skip_next_alarm(hass: HomeAssistant) -> None
 
     assert result.response.speech["plain"]["speech"] == "Okay. I'll skip the next work alarm."
     assert manager.registry.get(record.alarm_id).metadata["skip_next"] is True
+
+
+async def test_voice_create_from_additional_room_satellite(hass: HomeAssistant) -> None:
+    """Any satellite paired with a room should resolve to the same alarm endpoint."""
+    entry = _add_endpoint(
+        hass,
+        additional_targets=[
+            {
+                CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_right",
+                CONF_MEDIA_PLAYER: "media_player.bedroom_right",
+            }
+        ],
+    )
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    response = await voice.async_create_alarm(
+        _input(satellite_id="assist_satellite.bedroom_right"),
+        _result(time="6:45 am"),
+        recurrence=RECURRENCE_ONCE,
+        date_offset=1,
+    )
+
+    assert response == "Alarm set for 6:45 AM."
+    records = manager.registry.for_endpoint(entry.entry_id)
+    assert len(records) == 1
+    assert calls[0][0] == "add"
