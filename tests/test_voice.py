@@ -244,7 +244,7 @@ async def test_voice_next_and_cancel_next(hass: HomeAssistant) -> None:
 
 def test_voice_registers_and_unregisters_sentence_groups(hass: HomeAssistant, monkeypatch) -> None:
     """Voice controller should own and clean up its sentence registrations."""
-    unregister_callbacks = [MagicMock() for _ in range(6)]
+    unregister_callbacks = [MagicMock() for _ in range(8)]
     agent_manager = MagicMock()
     agent_manager.register_trigger.side_effect = unregister_callbacks
 
@@ -256,7 +256,7 @@ def test_voice_registers_and_unregisters_sentence_groups(hass: HomeAssistant, mo
     voice = VoiceController(hass, MagicMock(), MagicMock())
     voice.register()
 
-    assert agent_manager.register_trigger.call_count == 6
+    assert agent_manager.register_trigger.call_count == 8
 
     voice.unregister()
     for unregister in unregister_callbacks:
@@ -452,3 +452,114 @@ async def test_conversation_trigger_creates_named_selected_day_alarm(
     add_calls = [call for call in calls if call[0] == "add"]
     assert len(add_calls) == 1
     assert add_calls[0][1]["weekdays"] == ["mon", "wed", "fri"]
+
+
+async def test_voice_skip_next_alarm(hass: HomeAssistant) -> None:
+    """Room-local skip command should mark the next alarm without deleting it."""
+    entry = _add_endpoint(hass)
+    manager, playback, _calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="work",
+    )
+    entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2099-09-30T06:30:00-04:00",
+        },
+    )
+
+    response = await voice.async_skip_alarm(
+        _input(text="skip my next alarm"),
+        _result(),
+    )
+
+    assert response == "Okay. I'll skip the next work alarm."
+    assert manager.registry.get(record.alarm_id).metadata["skip_next"] is True
+
+
+async def test_voice_override_next_alarm(hass: HomeAssistant) -> None:
+    """Tomorrow-instead voice command should create a temporary override."""
+    entry = _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="work",
+    )
+    next_trigger = dt_util.now() + timedelta(days=1)
+    parent_entity = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        parent_entity,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": next_trigger.isoformat(),
+        },
+    )
+    calls.clear()
+
+    response = await voice.async_override_next(
+        _input(text="tomorrow wake me at 7 instead"),
+        _result(time="7"),
+    )
+
+    assert "The next work alarm will ring at 7 AM tomorrow instead." in response
+    stored = manager.registry.get(record.alarm_id)
+    assert stored.metadata["skip_next"] is True
+    assert stored.metadata["override"]["time"] == "07:00:00"
+    assert any(
+        call[0] == "add" and "Override" in call[1]["name"]
+        for call in calls
+    )
+
+
+async def test_conversation_trigger_skip_next_alarm(hass: HomeAssistant) -> None:
+    """The real conversation path should handle skip-next locally."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    entry = _add_endpoint(hass)
+    manager, playback, _calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="work",
+    )
+    entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2099-09-30T06:30:00-04:00",
+        },
+    )
+
+    voice.register()
+    try:
+        result = await conversation.async_converse(
+            hass=hass,
+            text="skip my next alarm",
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    assert result.response.speech["plain"]["speech"] == "Okay. I'll skip the next work alarm."
+    assert manager.registry.get(record.alarm_id).metadata["skip_next"] is True
