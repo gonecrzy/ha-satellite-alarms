@@ -1079,14 +1079,30 @@ Implemented in the v0.7 development branch:
 - runtime fallback when an Assist announcement fails
 - options wording changed from default alarm volume to target alarm volume
 
-Possible deliverables:
+#### v0.7 room UX/status implementation
 
-- Richer endpoint/alarm entities.
-- Dashboard controls.
-- Diagnostics.
-- Repair issues for invalid/offline endpoints.
-- Optional LLM tool exposure.
-- Optional blueprint/examples for lights, blinds, weather, and morning routines.
+Implemented in the v0.7 development branch:
+
+- standard room-level `next_alarm` timestamp sensor
+- room alarm-count sensor
+- room active-alarm sensor
+- room alarm-ringing binary sensor
+- local-push updates from registry/playback changes
+- refresh from Scheduler switch state changes
+- one Home Assistant service device per room endpoint
+- native room reconfiguration after initial setup
+- expanded diagnostics for targets, Scheduler mappings, alarms, active playback, and queue state
+- Home Assistant repair warnings for deleted room targets
+- Home Assistant repair warnings for missing Scheduler schedules
+- automatic repair clearing when the underlying problem is resolved
+- expired one-time alarms excluded from false missing-schedule repairs
+
+Remaining possible v0.7 polish:
+
+- dashboard examples
+- richer repair flows with direct fix actions
+- optional LLM tool exposure
+- optional blueprint/examples for lights, blinds, weather, and morning routines.
 
 ### v1.0 — Stable release
 
@@ -1197,7 +1213,7 @@ These should be resolved through implementation/testing rather than guessed up f
 1. Whether named alarm creation should eventually enforce unique names per endpoint or continue allowing duplicates with explicit disambiguation.
 2. Whether to restore prior media playback in addition to volume.
 3. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
-4. How alarm entities should be represented without creating entity clutter.
+4. Whether the current room-level entity set should remain the long-term default instead of adding one entity per individual alarm.
 5. Whether pre/post hooks should expand beyond the v0.6 simple sequential service-action format.
 6. Whether a future configurable playback strategy should supplement the current `assist_satellite.announce` path.
 7. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
