@@ -6,10 +6,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.assist_satellite_alarms.alarm_manager import AlarmManager
 from custom_components.assist_satellite_alarms.binary_sensor import (
     AlarmRingingBinarySensor,
 )
-from custom_components.assist_satellite_alarms.alarm_manager import AlarmManager
 from custom_components.assist_satellite_alarms.const import (
     CONF_ASSIST_SATELLITE,
     CONF_MEDIA_PLAYER,
