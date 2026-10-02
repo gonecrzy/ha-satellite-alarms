@@ -20,6 +20,7 @@ from custom_components.assist_satellite_alarms.const import (
     DOMAIN,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
+    RECURRENCE_SELECTED_DAYS,
     SCHEDULER_DOMAIN,
 )
 from custom_components.assist_satellite_alarms.models import AlarmRecord
@@ -31,6 +32,7 @@ from custom_components.assist_satellite_alarms.voice import (
     format_clock_time,
     parse_alarm_time,
     parse_snooze_minutes,
+    parse_weekday_selection,
 )
 
 
@@ -232,17 +234,17 @@ async def test_voice_next_and_cancel_next(hass: HomeAssistant) -> None:
     manager.async_delete = AsyncMock()
     voice = VoiceController(hass, manager, MagicMock())
 
-    response = await voice.async_next_alarm(_input(), _result())
+    response = await voice.async_query_alarm(_input(), _result())
     assert response.startswith("Your next alarm is at ")
 
-    response = await voice.async_cancel_next(_input(), _result())
+    response = await voice.async_cancel_alarm(_input(), _result())
     assert response.startswith("Canceled the alarm at ")
     manager.async_delete.assert_awaited_once_with("abc123")
 
 
 def test_voice_registers_and_unregisters_sentence_groups(hass: HomeAssistant, monkeypatch) -> None:
     """Voice controller should own and clean up its sentence registrations."""
-    unregister_callbacks = [MagicMock() for _ in range(5)]
+    unregister_callbacks = [MagicMock() for _ in range(6)]
     agent_manager = MagicMock()
     agent_manager.register_trigger.side_effect = unregister_callbacks
 
@@ -254,7 +256,7 @@ def test_voice_registers_and_unregisters_sentence_groups(hass: HomeAssistant, mo
     voice = VoiceController(hass, MagicMock(), MagicMock())
     voice.register()
 
-    assert agent_manager.register_trigger.call_count == 5
+    assert agent_manager.register_trigger.call_count == 6
 
     voice.unregister()
     for unregister in unregister_callbacks:
@@ -309,3 +311,144 @@ async def test_conversation_trigger_creates_one_weekday_alarm(
     assert len(add_calls) == 1
     assert add_calls[0][1]["timeslots"][0]["start"] == "06:30:00"
     assert add_calls[0][1]["weekdays"] == ["workday"]
+
+
+def test_parse_weekday_selection() -> None:
+    """Selected weekdays should normalize into Scheduler order."""
+    assert parse_weekday_selection("Friday, Monday and Wednesday") == [
+        "mon",
+        "wed",
+        "fri",
+    ]
+
+
+async def test_voice_named_selected_days_alarm(hass: HomeAssistant) -> None:
+    """Named selected-day alarms should create one room-local Scheduler schedule."""
+    _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    response = await voice.async_create(
+        _input(text="set a work alarm for 6:30 on Monday Wednesday and Friday"),
+        _result(name="work", time="6:30 on Monday Wednesday and Friday"),
+    )
+
+    assert response == "work alarm set for 6:30 AM on Monday, Wednesday, and Friday."
+    records = manager.registry.all()
+    assert len(records) == 1
+    assert records[0].name == "work"
+    assert records[0].metadata["recurrence"] == RECURRENCE_SELECTED_DAYS
+    assert records[0].metadata["days"] == ["mon", "wed", "fri"]
+    assert calls[0][1]["weekdays"] == ["mon", "wed", "fri"]
+
+
+async def test_voice_query_and_cancel_named_alarm(hass: HomeAssistant) -> None:
+    """Named alarm query/cancel should target exactly the matching room alarm."""
+    entry = _add_endpoint(hass)
+    manager, playback, _calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="work",
+    )
+    entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2099-09-30T06:30:00-04:00",
+        },
+    )
+
+    response = await voice.async_query_alarm(_input(), _result(selector="work"))
+    assert response == "work alarm is set at 6:30 AM every day."
+
+    response = await voice.async_cancel_alarm(_input(), _result(selector="work"))
+    assert response == "Canceled work alarm at 6:30 AM every day."
+    assert manager.registry.get(record.alarm_id) is None
+
+
+async def test_voice_time_selector_requires_disambiguation(hass: HomeAssistant) -> None:
+    """Multiple same-time alarms should not be deleted by an ambiguous voice command."""
+    entry = _add_endpoint(hass)
+    manager, playback, _calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    for name in ("work", "backup"):
+        await manager.async_create(
+            endpoint_id=entry.entry_id,
+            time_value="06:30:00",
+            recurrence=RECURRENCE_DAILY,
+            name=name,
+        )
+
+    response = await voice.async_cancel_alarm(_input(), _result(selector="6:30"))
+
+    assert response == "More than one alarm is set for 6:30 AM in this room."
+    assert len(manager.registry.all()) == 2
+
+
+async def test_voice_lists_multiple_room_alarms(hass: HomeAssistant) -> None:
+    """List command should summarize alarms belonging to the originating room."""
+    entry = _add_endpoint(hass)
+    manager, playback, _calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="work",
+    )
+    await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="08:00:00",
+        recurrence=RECURRENCE_SELECTED_DAYS,
+        days=["sat", "sun"],
+        name="weekend",
+    )
+
+    response = await voice.async_list_alarms(_input(), _result())
+
+    assert response.startswith("You have 2 alarms:")
+    assert "work alarm at 6:30 AM every day" in response
+    assert "weekend alarm at 8 AM on Saturday and Sunday" in response
+
+
+async def test_conversation_trigger_creates_named_selected_day_alarm(
+    hass: HomeAssistant,
+) -> None:
+    """Real conversation matching should support names plus explicit weekdays."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    entry = _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+    voice.register()
+
+    try:
+        result = await conversation.async_converse(
+            hass=hass,
+            text="set a work alarm for 6:30 on Monday Wednesday and Friday",
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    assert (
+        result.response.speech["plain"]["speech"]
+        == "work alarm set for 6:30 AM on Monday, Wednesday, and Friday."
+    )
+    records = manager.registry.for_endpoint(entry.entry_id)
+    assert len(records) == 1
+    assert records[0].name == "work"
+    add_calls = [call for call in calls if call[0] == "add"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1]["weekdays"] == ["mon", "wed", "fri"]
