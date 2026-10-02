@@ -103,7 +103,11 @@ def test_build_snooze_payload() -> None:
     assert payload["timeslots"][0]["start"] == "06:40:00"
     assert payload["timeslots"][0]["actions"][0] == {
         "service": f"{DOMAIN}.fire",
-        "service_data": {"alarm_id": "abc123"},
+        "service_data": {
+            "alarm_id": "abc123",
+            "occurrence": OCCURRENCE_SNOOZE,
+            "occurrence_id": "snooze456",
+        },
     }
     assert f"{DOMAIN}:snooze:snooze456" in payload["tags"]
     assert f"{DOMAIN}:parent:abc123" in payload["tags"]
