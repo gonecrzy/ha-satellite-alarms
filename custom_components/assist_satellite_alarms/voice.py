@@ -6,8 +6,8 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from hassil.recognize import RecognizeResult
 
+from hassil.recognize import RecognizeResult
 from homeassistant.components.conversation import ConversationInput
 from homeassistant.components.conversation.agent_manager import get_agent_manager
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
@@ -449,10 +449,9 @@ def parse_alarm_time(value: str) -> str:
     if meridiem:
         if not 1 <= hour <= 12:
             raise VoiceCommandError("I couldn't understand the alarm time.")
-        if meridiem == "am":
-            hour = 0 if hour == 12 else hour
-        else:
-            hour = 12 if hour == 12 else hour + 12
+        hour = (
+            0 if hour == 12 else hour
+        ) if meridiem == "am" else (12 if hour == 12 else hour + 12)
     elif not 0 <= hour <= 23:
         raise VoiceCommandError("I couldn't understand the alarm time.")
 
