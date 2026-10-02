@@ -27,8 +27,15 @@ async def async_get_config_entry_diagnostics(
             "entry_id": endpoint.entry_id,
             "name": endpoint.name,
             "area_id": endpoint.area_id,
-            "assist_satellite_entity_id": endpoint.assist_satellite_entity_id,
-            "media_player_entity_id": endpoint.media_player_entity_id,
+            "assist_satellite_entity_ids": list(endpoint.assist_satellite_entity_ids),
+            "media_player_entity_ids": list(endpoint.media_player_entity_ids),
+            "playback_targets": [
+                {
+                    "assist_satellite_entity_id": target.assist_satellite_entity_id,
+                    "media_player_entity_id": target.media_player_entity_id,
+                }
+                for target in endpoint.playback_targets
+            ],
         },
         "options": dict(entry.options),
         "scheduler_ready": bool(adapter and adapter.is_ready),
