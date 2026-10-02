@@ -6,8 +6,6 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Any
-
 from hassil.recognize import RecognizeResult
 
 from homeassistant.components.conversation import ConversationInput
