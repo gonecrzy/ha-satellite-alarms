@@ -93,6 +93,8 @@ async def test_create_alarm(hass: HomeAssistant) -> None:
         META_RECURRENCE: RECURRENCE_ONCE,
         META_DATE: "2099-09-30",
         META_DAYS: None,
+        META_SKIP_NEXT: False,
+        META_OVERRIDE: None,
     }
     assert calls[0][0] == "add"
     assert calls[0][1]["start_date"] == "2099-09-30"
