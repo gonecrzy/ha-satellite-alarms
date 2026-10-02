@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_STATE_CHANGED
-from homeassistant.core import CoreState, Event, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, CoreState, Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -32,7 +32,7 @@ class RoomHealthMonitor:
         self.scheduler = scheduler
         self.endpoint = AlarmEndpoint.from_config_entry(entry)
         self._known_issue_ids: set[str] = set()
-        self._unsubscribers: list[callable] = []
+        self._unsubscribers: list[CALLBACK_TYPE] = []
 
     def start(self) -> None:
         """Start monitoring room configuration and schedule health."""
