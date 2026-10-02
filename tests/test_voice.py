@@ -269,7 +269,7 @@ async def test_voice_create_dispatches_weekday_without_duplicate(
 
     response = await voice.async_create(
         _input(text="wake me at 6:30 on weekdays"),
-        _result(time="6:30"),
+        _result(time="6:30 on weekdays"),
     )
 
     assert response == "Alarm set for 6:30 AM on weekdays."
