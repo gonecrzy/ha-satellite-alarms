@@ -150,12 +150,8 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             primary_satellite = user_input[CONF_ASSIST_SATELLITE]
             primary_player = user_input[CONF_MEDIA_PLAYER]
-            additional_satellites = list(
-                user_input.get(CONF_ADDITIONAL_ASSIST_SATELLITES, [])
-            )
-            additional_players = list(
-                user_input.get(CONF_ADDITIONAL_MEDIA_PLAYERS, [])
-            )
+            additional_satellites = list(user_input.get(CONF_ADDITIONAL_ASSIST_SATELLITES, []))
+            additional_players = list(user_input.get(CONF_ADDITIONAL_MEDIA_PLAYERS, []))
             all_satellites = [primary_satellite, *additional_satellites]
             all_players = [primary_player, *additional_players]
 
