@@ -64,5 +64,33 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "next_alarm": {
+        "name": "Next alarm"
+      },
+      "alarm_count": {
+        "name": "Alarm count"
+      },
+      "active_alarm": {
+        "name": "Active alarm"
+      }
+    },
+    "binary_sensor": {
+      "alarm_ringing": {
+        "name": "Alarm ringing"
+      }
+    }
+  },
+  "issues": {
+    "missing_room_target": {
+      "title": "Alarm room target is missing",
+      "description": "The Satellite Alarms room **{room}** references `{entity_id}`, but that entity no longer exists. Restore the entity or reconfigure the room endpoint."
+    },
+    "missing_alarm_schedule": {
+      "title": "Alarm Scheduler schedule is missing",
+      "description": "The alarm **{alarm}** in **{room}** no longer has a matching Scheduler Component schedule. Recreate or remove the alarm so Satellite Alarms and Scheduler Component are synchronized again."
+    }
   }
 }
