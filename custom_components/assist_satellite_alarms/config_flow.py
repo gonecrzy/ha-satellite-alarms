@@ -167,9 +167,9 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "duplicate_satellite"
             elif len(set(all_players)) != len(all_players):
                 errors["base"] = "duplicate_media_player"
-            elif any(self.hass.states.get(entity_id) is None for entity_id in all_satellites):
-                errors["base"] = "entity_not_found"
-            elif any(self.hass.states.get(entity_id) is None for entity_id in all_players):
+            elif any(
+                self.hass.states.get(entity_id) is None for entity_id in all_satellites
+            ) or any(self.hass.states.get(entity_id) is None for entity_id in all_players):
                 errors["base"] = "entity_not_found"
             elif self._satellites_already_configured(set(all_satellites)):
                 errors["base"] = "satellite_already_in_room"
