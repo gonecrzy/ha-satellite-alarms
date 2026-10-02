@@ -518,10 +518,7 @@ async def test_voice_override_next_alarm(hass: HomeAssistant) -> None:
     stored = manager.registry.get(record.alarm_id)
     assert stored.metadata["skip_next"] is True
     assert stored.metadata["override"]["time"] == "07:00:00"
-    assert any(
-        call[0] == "add" and "Override" in call[1]["name"]
-        for call in calls
-    )
+    assert any(call[0] == "add" and "Override" in call[1]["name"] for call in calls)
 
 
 async def test_conversation_trigger_skip_next_alarm(hass: HomeAssistant) -> None:
