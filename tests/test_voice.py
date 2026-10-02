@@ -284,6 +284,7 @@ async def test_conversation_trigger_creates_one_weekday_alarm(
     hass: HomeAssistant,
 ) -> None:
     """The real conversation trigger path should route and create only one alarm."""
+    assert await async_setup_component(hass, "homeassistant", {})
     assert await async_setup_component(hass, "conversation", {})
     entry = _add_endpoint(hass)
     manager, playback, calls = await _manager(hass)
