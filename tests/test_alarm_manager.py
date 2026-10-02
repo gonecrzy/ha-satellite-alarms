@@ -17,10 +17,12 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_NAME,
     DOMAIN,
     META_DATE,
+    META_DAYS,
     META_RECURRENCE,
     META_TIME,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
+    RECURRENCE_SELECTED_DAYS,
     RECURRENCE_WEEKDAYS,
     SCHEDULER_DOMAIN,
 )
@@ -82,6 +84,7 @@ async def test_create_alarm(hass: HomeAssistant) -> None:
         META_TIME: "06:30:00",
         META_RECURRENCE: RECURRENCE_ONCE,
         META_DATE: "2099-09-30",
+        META_DAYS: None,
     }
     assert calls[0][0] == "add"
     assert calls[0][1]["start_date"] == "2099-09-30"
@@ -318,3 +321,92 @@ async def test_next_alarm_for_endpoint_uses_scheduler_next_trigger(
     next_record, trigger = next_alarm
     assert next_record.alarm_id == record.alarm_id
     assert trigger.isoformat() == "2099-09-30T07:00:00-04:00"
+
+
+async def test_selected_days_create_update_and_query_helpers(hass: HomeAssistant) -> None:
+    """Selected-day alarms should persist days and support room-local lookup."""
+    entry = _add_endpoint(hass)
+    manager, calls = await _manager(hass)
+
+    work = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_SELECTED_DAYS,
+        days=["fri", "mon", "wed"],
+        name="Work",
+    )
+    gym = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="18:00:00",
+        recurrence=RECURRENCE_DAILY,
+        name="Gym",
+    )
+
+    assert work.metadata[META_DAYS] == ["mon", "wed", "fri"]
+    assert calls[0][1]["weekdays"] == ["mon", "wed", "fri"]
+    assert manager.find_by_name(entry.entry_id, "work") == (work,)
+    assert manager.find_by_time(entry.entry_id, "18:00:00") == (gym,)
+
+    calls.clear()
+    updated = await manager.async_update(
+        alarm_id=work.alarm_id,
+        days=["tue", "thu"],
+    )
+
+    assert updated.metadata[META_DAYS] == ["tue", "thu"]
+    assert calls[0][0] == "edit"
+    assert calls[0][1]["weekdays"] == ["tue", "thu"]
+
+
+async def test_selected_days_validation(hass: HomeAssistant) -> None:
+    """Selected-day recurrence should reject missing days and stray day fields."""
+    entry = _add_endpoint(hass)
+    manager, _ = await _manager(hass)
+
+    with pytest.raises(ValueError, match="at least one weekday"):
+        await manager.async_create(
+            endpoint_id=entry.entry_id,
+            time_value="06:30:00",
+            recurrence=RECURRENCE_SELECTED_DAYS,
+        )
+
+    with pytest.raises(ValueError, match="only be used"):
+        await manager.async_create(
+            endpoint_id=entry.entry_id,
+            time_value="06:30:00",
+            recurrence=RECURRENCE_DAILY,
+            days=["mon"],
+        )
+
+
+async def test_list_responses_include_enabled_days_and_next_trigger(
+    hass: HomeAssistant,
+) -> None:
+    """List responses should expose management data for multiple alarms."""
+    entry = _add_endpoint(hass)
+    manager, _ = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_SELECTED_DAYS,
+        days=["mon", "wed", "fri"],
+        name="Work",
+    )
+
+    entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2099-09-30T06:30:00-04:00",
+        },
+    )
+
+    response = manager.list_responses(entry.entry_id)
+
+    assert len(response) == 1
+    assert response[0]["name"] == "Work"
+    assert response[0]["days"] == ["mon", "wed", "fri"]
+    assert response[0]["enabled"] is True
+    assert response[0]["next_trigger"] == "2099-09-30T06:30:00-04:00"

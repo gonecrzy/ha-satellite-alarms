@@ -93,6 +93,8 @@ class PlaybackManager:
         self.registry = registry
         self.scheduler = scheduler
         self._active_by_endpoint: dict[str, ActiveAlarm] = {}
+        self._queued_by_endpoint: dict[str, list[str]] = {}
+        self._shutting_down = False
         self._lock = asyncio.Lock()
 
     def active_for_endpoint(self, endpoint_id: str) -> ActiveAlarm | None:
@@ -105,6 +107,14 @@ class PlaybackManager:
             (active for active in self._active_by_endpoint.values() if active.alarm_id == alarm_id),
             None,
         )
+
+    def queued_for_endpoint(self, endpoint_id: str) -> tuple[str, ...]:
+        """Return alarms waiting to ring on an endpoint."""
+        return tuple(self._queued_by_endpoint.get(endpoint_id, ()))
+
+    def clear_queue(self, endpoint_id: str) -> None:
+        """Drop queued alarms for an endpoint without touching schedules."""
+        self._queued_by_endpoint.pop(endpoint_id, None)
 
     def _record(self, alarm_id: str) -> AlarmRecord:
         """Return an alarm record or raise."""
@@ -225,14 +235,33 @@ class PlaybackManager:
                     exc_info=True,
                 )
 
+        next_alarm_id: str | None = None
         async with self._lock:
             if self._active_by_endpoint.get(active.endpoint_entry_id) is active:
                 self._active_by_endpoint.pop(active.endpoint_entry_id, None)
+
+            if active.finish_reason in {"shutdown", "unload"} or self._shutting_down:
+                self._queued_by_endpoint.pop(active.endpoint_entry_id, None)
+            else:
+                queue = self._queued_by_endpoint.get(active.endpoint_entry_id, [])
+                while queue:
+                    candidate = queue.pop(0)
+                    if self.registry.get(candidate) is not None:
+                        next_alarm_id = candidate
+                        break
+                if not queue:
+                    self._queued_by_endpoint.pop(active.endpoint_entry_id, None)
 
         if active.finish_reason in {"stop", "timeout"}:
             record = self.registry.get(active.alarm_id)
             if record and record.metadata.get(META_RECURRENCE) == RECURRENCE_ONCE:
                 await self.registry.async_remove(active.alarm_id)
+
+        if next_alarm_id is not None:
+            self.hass.async_create_task(
+                self._async_start_queued(next_alarm_id),
+                f"{DOMAIN} queued alarm {next_alarm_id}",
+            )
 
     async def _async_run(self, active: ActiveAlarm, entry: ConfigEntry) -> None:
         """Run the repeating alarm loop until stopped or timed out."""
@@ -353,6 +382,31 @@ class PlaybackManager:
             )
             return active
 
+    async def async_start_or_queue(self, alarm_id: str) -> tuple[ActiveAlarm | None, bool]:
+        """Start an alarm or queue it if another alarm owns the endpoint."""
+        try:
+            return await self.async_start(alarm_id), False
+        except AlarmAlreadyRingingError:
+            record = self._record(alarm_id)
+            async with self._lock:
+                current = self._active_by_endpoint.get(record.endpoint_entry_id)
+                if current is not None and current.alarm_id == alarm_id:
+                    return current, False
+
+                queue = self._queued_by_endpoint.setdefault(record.endpoint_entry_id, [])
+                if alarm_id not in queue:
+                    queue.append(alarm_id)
+            return None, True
+
+    async def _async_start_queued(self, alarm_id: str) -> None:
+        """Start a queued alarm after the previous endpoint alarm finishes."""
+        if self._shutting_down:
+            return
+        try:
+            await self.async_start_or_queue(alarm_id)
+        except PlaybackError:
+            _LOGGER.exception("Could not start queued alarm %s", alarm_id)
+
     def _resolve_active(
         self,
         *,
@@ -426,6 +480,8 @@ class PlaybackManager:
 
     async def async_shutdown(self) -> None:
         """Stop all ringing alarms during Home Assistant shutdown."""
+        self._shutting_down = True
+        self._queued_by_endpoint.clear()
         active = tuple(self._active_by_endpoint.values())
         for item in active:
             with contextlib.suppress(PlaybackError, HomeAssistantError):

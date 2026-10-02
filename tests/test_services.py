@@ -16,6 +16,7 @@ from custom_components.assist_satellite_alarms.const import (
     SCHEDULER_DOMAIN,
     SERVICE_CREATE,
     SERVICE_FIRE,
+    SERVICE_LIST,
     SERVICE_STOP,
 )
 from custom_components.assist_satellite_alarms.playback import PlaybackManager
@@ -126,3 +127,70 @@ async def test_create_fire_and_stop_services(hass: HomeAssistant) -> None:
     assert len(triggered_events) == 1
     assert triggered_events[0].data["assist_satellite_entity_id"] == ("assist_satellite.bedroom")
     assert len(stopped_events) == 1
+
+
+async def test_selected_days_and_list_service(hass: HomeAssistant) -> None:
+    """Create/list should expose selected weekdays and multiple alarm metadata."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bedroom",
+        data={
+            CONF_NAME: "Bedroom",
+            CONF_ASSIST_SATELLITE: "assist_satellite.bedroom",
+            CONF_MEDIA_PLAYER: "media_player.bedroom",
+        },
+        entry_id="bedroom-entry",
+    )
+    entry.add_to_hass(hass)
+
+    async def capture_scheduler(call: ServiceCall) -> None:
+        if call.service == "add":
+            name = call.data["name"]
+            entity_id = "switch.schedule_" + name.lower().replace(" ", "_")
+            hass.states.async_set(
+                entity_id,
+                "on",
+                {
+                    "tags": call.data.get("tags", []),
+                    "next_trigger": "2099-09-30T06:30:00-04:00",
+                },
+            )
+
+    for service in ("add", "edit", "remove"):
+        hass.services.async_register(SCHEDULER_DOMAIN, service, capture_scheduler)
+
+    registry = AlarmRegistry(hass)
+    await registry.async_load()
+    scheduler = SchedulerAdapter(hass)
+    manager = AlarmManager(hass, registry, scheduler)
+    playback = PlaybackManager(hass, registry, scheduler)
+    await async_register_services(hass, manager, playback)
+
+    created = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_CREATE,
+        {
+            "endpoint_id": entry.entry_id,
+            "time": "06:30:00",
+            "recurrence": "selected_days",
+            "days": ["fri", "mon", "wed"],
+            "name": "Work",
+        },
+        blocking=True,
+        return_response=True,
+    )
+
+    assert created["days"] == ["mon", "wed", "fri"]
+
+    listed = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_LIST,
+        {"endpoint_id": entry.entry_id},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert listed["count"] == 1
+    assert listed["alarms"][0]["alarm_id"] == created["alarm_id"]
+    assert listed["alarms"][0]["name"] == "Work"
+    assert listed["alarms"][0]["days"] == ["mon", "wed", "fri"]

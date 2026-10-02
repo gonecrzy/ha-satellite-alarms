@@ -16,9 +16,11 @@ from .const import (
     DOMAIN,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
+    RECURRENCE_SELECTED_DAYS,
     RECURRENCE_WEEKDAYS,
     RECURRENCE_WEEKENDS,
     SCHEDULER_DOMAIN,
+    WEEKDAYS,
 )
 
 SERVICE_ADD = "add"
@@ -78,8 +80,18 @@ class SchedulerAdapter:
         return f"switch.schedule_{slugify(cls.schedule_name(alarm_id))}"
 
     @staticmethod
-    def _weekdays_for_recurrence(recurrence: str) -> list[str]:
+    def _weekdays_for_recurrence(
+        recurrence: str, days: list[str] | tuple[str, ...] | None = None
+    ) -> list[str]:
         """Translate a Satellite Alarms recurrence to Scheduler Component."""
+        if recurrence == RECURRENCE_SELECTED_DAYS:
+            normalized = [day for day in WEEKDAYS if days and day in days]
+            if not normalized:
+                raise ValueError("Selected-day alarms require at least one weekday")
+            if len(normalized) != len(set(days or ())):
+                raise ValueError("Selected-day alarms contain an invalid weekday")
+            return normalized
+
         mapping = {
             RECURRENCE_ONCE: [_SCHEDULER_DAILY],
             RECURRENCE_DAILY: [_SCHEDULER_DAILY],
@@ -96,6 +108,7 @@ class SchedulerAdapter:
         time: str,
         recurrence: str,
         date: str | None,
+        days: list[str] | tuple[str, ...] | None = None,
         include_name: bool = True,
     ) -> dict[str, Any]:
         """Build a Scheduler Component add/edit payload."""
@@ -103,7 +116,7 @@ class SchedulerAdapter:
             raise ValueError("One-time alarms require a date")
 
         payload: dict[str, Any] = {
-            "weekdays": cls._weekdays_for_recurrence(recurrence),
+            "weekdays": cls._weekdays_for_recurrence(recurrence, days),
             "start_date": date if recurrence == RECURRENCE_ONCE else None,
             "end_date": date if recurrence == RECURRENCE_ONCE else None,
             "timeslots": [
@@ -159,7 +172,13 @@ class SchedulerAdapter:
         }
 
     async def async_create_schedule(
-        self, *, alarm_id: str, time: str, recurrence: str, date: str | None
+        self,
+        *,
+        alarm_id: str,
+        time: str,
+        recurrence: str,
+        date: str | None,
+        days: list[str] | tuple[str, ...] | None = None,
     ) -> str:
         """Create a persistent Scheduler Component schedule."""
         self.ensure_ready()
@@ -168,6 +187,7 @@ class SchedulerAdapter:
             time=time,
             recurrence=recurrence,
             date=date,
+            days=days,
         )
         await self.hass.services.async_call(
             SCHEDULER_DOMAIN,
@@ -203,6 +223,7 @@ class SchedulerAdapter:
         time: str,
         recurrence: str,
         date: str | None,
+        days: list[str] | tuple[str, ...] | None = None,
     ) -> None:
         """Update a Scheduler Component schedule."""
         self.ensure_ready()
@@ -211,6 +232,7 @@ class SchedulerAdapter:
             time=time,
             recurrence=recurrence,
             date=date,
+            days=days,
             include_name=False,
         )
         payload[ATTR_ENTITY_ID] = entity_id

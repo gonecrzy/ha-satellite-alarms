@@ -15,6 +15,7 @@ from .alarm_manager import AlarmManager, AlarmNotFoundError, EndpointNotFoundErr
 from .const import (
     ATTR_ALARM_ID,
     ATTR_DATE,
+    ATTR_DAYS,
     ATTR_ENDPOINT_ID,
     ATTR_MINUTES,
     ATTR_RECURRENCE,
@@ -31,9 +32,11 @@ from .const import (
     SERVICE_DISABLE,
     SERVICE_ENABLE,
     SERVICE_FIRE,
+    SERVICE_LIST,
     SERVICE_SNOOZE,
     SERVICE_STOP,
     SERVICE_UPDATE,
+    WEEKDAYS,
 )
 from .playback import PlaybackError, PlaybackManager
 
@@ -72,6 +75,7 @@ CREATE_SCHEMA = vol.Schema(
         vol.Required(ATTR_TIME): _validate_time,
         vol.Optional(ATTR_RECURRENCE, default=RECURRENCE_ONCE): vol.In(RECURRENCES),
         vol.Optional(ATTR_DATE): _validate_date,
+        vol.Optional(ATTR_DAYS): vol.All(cv.ensure_list, [vol.In(WEEKDAYS)]),
         vol.Optional(CONF_NAME): cv.string,
     }
 )
@@ -82,11 +86,14 @@ UPDATE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_TIME): _validate_time,
         vol.Optional(ATTR_RECURRENCE): vol.In(RECURRENCES),
         vol.Optional(ATTR_DATE): _validate_date,
+        vol.Optional(ATTR_DAYS): vol.All(cv.ensure_list, [vol.In(WEEKDAYS)]),
         vol.Optional(CONF_NAME): cv.string,
     }
 )
 
 ALARM_ID_SCHEMA = vol.Schema({vol.Required(ATTR_ALARM_ID): cv.string})
+
+LIST_SCHEMA = vol.Schema({vol.Optional(ATTR_ENDPOINT_ID): cv.string})
 
 ACTIVE_ALARM_SCHEMA = vol.All(
     vol.Schema(
@@ -131,6 +138,7 @@ async def async_register_services(
                 time_value=call.data[ATTR_TIME],
                 recurrence=call.data[ATTR_RECURRENCE],
                 date_value=call.data.get(ATTR_DATE),
+                days=call.data.get(ATTR_DAYS),
                 name=call.data.get(CONF_NAME),
             )
         except (AlarmNotFoundError, EndpointNotFoundError, ValueError) as err:
@@ -144,6 +152,7 @@ async def async_register_services(
                 time_value=call.data.get(ATTR_TIME),
                 recurrence=call.data.get(ATTR_RECURRENCE),
                 date_value=call.data.get(ATTR_DATE),
+                days=call.data.get(ATTR_DAYS),
                 name=call.data.get(CONF_NAME),
             )
         except (AlarmNotFoundError, EndpointNotFoundError, ValueError) as err:
@@ -172,11 +181,19 @@ async def async_register_services(
             raise _service_error(err) from err
         return {**manager.response(record), "enabled": False}
 
+    async def async_list(call: ServiceCall) -> dict[str, object]:
+        """List alarms, optionally scoped to one configured endpoint."""
+        try:
+            alarms = manager.list_responses(call.data.get(ATTR_ENDPOINT_ID))
+        except EndpointNotFoundError as err:
+            raise _service_error(err) from err
+        return {"alarms": alarms, "count": len(alarms)}
+
     async def async_fire(call: ServiceCall) -> dict[str, object]:
         alarm_id = call.data[ATTR_ALARM_ID]
         try:
             event_data = manager.fire_event_data(alarm_id)
-            await playback.async_start(alarm_id)
+            _active, queued = await playback.async_start_or_queue(alarm_id)
         except (
             AlarmNotFoundError,
             EndpointNotFoundError,
@@ -185,8 +202,9 @@ async def async_register_services(
         ) as err:
             raise _service_error(err) from err
 
-        hass.bus.async_fire(EVENT_ALARM_TRIGGERED, event_data)
-        return {**event_data, "ringing": True}
+        result = {**event_data, "ringing": not queued, "queued": queued}
+        hass.bus.async_fire(EVENT_ALARM_TRIGGERED, result)
+        return result
 
     async def async_stop(call: ServiceCall) -> dict[str, object]:
         try:
@@ -258,6 +276,13 @@ async def async_register_services(
         SERVICE_DISABLE,
         async_disable,
         schema=ALARM_ID_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_LIST,
+        async_list,
+        schema=LIST_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
