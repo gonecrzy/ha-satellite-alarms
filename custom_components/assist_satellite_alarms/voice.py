@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from hassil.recognize import RecognizeResult
 from homeassistant.components.conversation import ConversationInput
@@ -101,6 +101,20 @@ _CANCEL_SENTENCES = [
     "(cancel|delete|remove) my alarm",
     "(cancel|delete|remove) my {selector} alarm",
     "(cancel|delete|remove) the {selector} alarm",
+]
+_SKIP_SENTENCES = [
+    "skip my next alarm",
+    "skip [the] next alarm",
+    "skip tomorrow's alarm",
+    "skip my alarm tomorrow",
+    "skip my {selector} alarm",
+    "skip the {selector} alarm",
+]
+_OVERRIDE_SENTENCES = [
+    "tomorrow wake me [up] at {time} instead",
+    "change my next alarm to {time} tomorrow",
+    "set my next alarm to {time} tomorrow",
+    "move my next alarm to {time} tomorrow",
 ]
 
 _CREATE_SENTENCES = [
@@ -204,6 +218,8 @@ class VoiceController:
             (_QUERY_SENTENCES, self.async_query_alarm),
             (_LIST_SENTENCES, self.async_list_alarms),
             (_CANCEL_SENTENCES, self.async_cancel_alarm),
+            (_SKIP_SENTENCES, self.async_skip_alarm),
+            (_OVERRIDE_SENTENCES, self.async_override_next),
         ]
 
         for sentences, callback in groups:
@@ -416,6 +432,71 @@ class VoiceController:
         if len(records) > len(shown):
             response += f"; and {len(records) - len(shown)} more"
         return f"{response}."
+
+    async def async_skip_alarm(
+        self, user_input: ConversationInput, result: RecognizeResult
+    ) -> str:
+        """Skip one upcoming occurrence without changing the parent schedule."""
+        try:
+            endpoint_id = self.resolve_endpoint_id(user_input)
+            selector = self._optional_slot(result, "selector")
+            if selector:
+                record = self._resolve_alarm_selector(endpoint_id, selector)
+            else:
+                next_alarm = self.manager.next_alarm_for_endpoint(endpoint_id)
+                if next_alarm is None:
+                    return "There are no scheduled alarms in this room."
+                record, trigger = next_alarm
+                if "tomorrow" in _normalize_spoken_text(user_input.text):
+                    tomorrow = dt_util.now().date() + timedelta(days=1)
+                    if dt_util.as_local(trigger).date() != tomorrow:
+                        return "There is no alarm scheduled for tomorrow in this room."
+
+            await self.manager.async_set_skip_next(record.alarm_id)
+        except VoiceCommandError as err:
+            return str(err)
+        except Exception:
+            _LOGGER.exception("Could not skip alarm from voice command")
+            return "I couldn't skip the alarm."
+
+        return f"Okay. I'll skip the next {_display_alarm_name(record)}."
+
+    async def async_override_next(
+        self, user_input: ConversationInput, result: RecognizeResult
+    ) -> str:
+        """Temporarily move the room's next alarm occurrence."""
+        try:
+            endpoint_id = self.resolve_endpoint_id(user_input)
+            next_alarm = self.manager.next_alarm_for_endpoint(endpoint_id)
+            if next_alarm is None:
+                return "There are no scheduled alarms in this room."
+
+            record, trigger = next_alarm
+            time_value = parse_alarm_time(_clean_alarm_time_slot(self._slot(result, "time")))
+            target_date = (
+                dt_util.now().date() + timedelta(days=1)
+                if "tomorrow" in _normalize_spoken_text(user_input.text)
+                else dt_util.as_local(trigger).date()
+            )
+            await self.manager.async_override_next(
+                record.alarm_id,
+                time_value=time_value,
+                date_value=target_date.isoformat(),
+            )
+            parsed_time = dt_util.parse_time(time_value)
+            if parsed_time is None:
+                raise VoiceCommandError("I couldn't understand the alarm time.")
+            target = datetime.combine(target_date, parsed_time, tzinfo=dt_util.now().tzinfo)
+        except (VoiceCommandError, ValueError) as err:
+            return str(err)
+        except Exception:
+            _LOGGER.exception("Could not override alarm from voice command")
+            return "I couldn't change the next alarm."
+
+        return (
+            f"Okay. The next {_display_alarm_name(record)} will ring "
+            f"{format_trigger_time(target)} instead."
+        )
 
     async def async_cancel_alarm(
         self, user_input: ConversationInput, result: RecognizeResult
