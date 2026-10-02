@@ -479,8 +479,10 @@ class PlaybackManager:
             return
         try:
             await self.async_start_or_queue(alarm_id)
-        except PlaybackError:
+        except PlaybackError as err:
             _LOGGER.exception("Could not start queued alarm %s", alarm_id)
+            if self.registry.get(alarm_id) is not None:
+                await self.async_handle_failure(alarm_id, str(err))
 
     def _resolve_active(
         self,
