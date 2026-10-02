@@ -180,8 +180,7 @@ class PlaybackManager:
         media_id = str(
             configured_media
             if configured_media is not None
-            else self._option(entry, CONF_DEFAULT_ALARM_MEDIA, DEFAULT_ALARM_MEDIA)
-            or ""
+            else self._option(entry, CONF_DEFAULT_ALARM_MEDIA, DEFAULT_ALARM_MEDIA) or ""
         ).strip()
         message = str(
             self._option(entry, CONF_DEFAULT_ALARM_MESSAGE, DEFAULT_ALARM_MESSAGE)
