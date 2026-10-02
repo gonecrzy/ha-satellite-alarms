@@ -161,6 +161,24 @@ class AlarmManager:
             metadata[META_FAILURE_ACTIONS] = failure_actions
         return metadata
 
+    async def _async_remove_override_schedule(self, record: AlarmRecord) -> None:
+        """Best-effort remove a transient override schedule attached to an alarm."""
+        override = record.metadata.get(META_OVERRIDE)
+        if not isinstance(override, dict):
+            return
+        entity_id = override.get("scheduler_entity_id")
+        if not entity_id:
+            return
+        try:
+            await self.scheduler.async_remove_schedule(str(entity_id))
+        except Exception:
+            _LOGGER.debug(
+                "Override schedule %s for alarm %s was already unavailable",
+                entity_id,
+                record.alarm_id,
+                exc_info=True,
+            )
+
     async def async_create(
         self,
         *,
@@ -289,6 +307,7 @@ class AlarmManager:
                 new_days = self._normalize_days(new_recurrence, days)
 
             if schedule_changed:
+                await self._async_remove_override_schedule(record)
                 entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
                 if entity_id is None:
                     raise AlarmNotFoundError(
@@ -324,11 +343,7 @@ class AlarmManager:
         """Delete an alarm and its Scheduler Component schedule."""
         async with self._lock:
             record = self._record(alarm_id)
-            override = record.metadata.get(META_OVERRIDE)
-            if isinstance(override, dict):
-                override_entity = override.get("scheduler_entity_id")
-                if override_entity and self.hass.states.get(str(override_entity)):
-                    await self.scheduler.async_remove_schedule(str(override_entity))
+            await self._async_remove_override_schedule(record)
 
             entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
             if entity_id is None:
@@ -349,6 +364,10 @@ class AlarmManager:
                 )
             await self.scheduler.async_set_enabled(entity_id, enabled)
             record.scheduler_entity_id = entity_id
+            if not enabled:
+                await self._async_remove_override_schedule(record)
+                record.metadata[META_OVERRIDE] = None
+                record.metadata[META_SKIP_NEXT] = False
             await self.registry.async_upsert(record)
             return record
 
@@ -409,11 +428,7 @@ class AlarmManager:
             )
             return updated, None, None
 
-        previous_override = record.metadata.get(META_OVERRIDE)
-        if isinstance(previous_override, dict):
-            old_entity = previous_override.get("scheduler_entity_id")
-            if old_entity and self.hass.states.get(str(old_entity)):
-                await self.scheduler.async_remove_schedule(str(old_entity))
+        await self._async_remove_override_schedule(record)
 
         override_entity, occurrence_id = await self.scheduler.async_create_override_schedule(
             alarm_id=alarm_id,
