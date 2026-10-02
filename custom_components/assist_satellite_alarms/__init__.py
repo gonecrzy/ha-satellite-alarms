@@ -110,6 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload one Satellite Alarms endpoint."""
     playback: PlaybackManager = hass.data[DOMAIN][DATA_PLAYBACK_MANAGER]
+    playback.clear_queue(entry.entry_id)
     active = playback.active_for_endpoint(entry.entry_id)
     if active is not None:
         await playback.async_stop(endpoint_id=entry.entry_id, reason="unload")
