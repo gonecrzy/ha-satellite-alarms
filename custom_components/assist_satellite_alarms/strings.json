@@ -21,6 +21,26 @@
           "additional_assist_satellite_entity_ids": "Optional additional satellites in the same room. Selection order is paired with the additional media-player selection.",
           "additional_media_player_entity_ids": "Optional additional media players. Select the same number as additional satellites and in matching order."
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure room alarm endpoint",
+        "description": "Change the room's primary pair or additional Assist satellite/media-player pairs.",
+        "data": {
+          "name": "Endpoint name",
+          "area_id": "Area",
+          "assist_satellite_entity_id": "Primary Assist satellite",
+          "media_player_entity_id": "Primary alarm media player",
+          "additional_assist_satellite_entity_ids": "Additional Assist satellites",
+          "additional_media_player_entity_ids": "Additional alarm media players"
+        },
+        "data_description": {
+          "name": "A friendly room/endpoint name, such as Bedroom.",
+          "area_id": "Optional Home Assistant area for this endpoint.",
+          "assist_satellite_entity_id": "The primary Assist satellite for this room.",
+          "media_player_entity_id": "The media player paired with the primary Assist satellite.",
+          "additional_assist_satellite_entity_ids": "Optional additional satellites in the same room. Selection order is paired with the additional media-player selection.",
+          "additional_media_player_entity_ids": "Optional additional media players. Select the same number as additional satellites and in matching order."
+        }
       }
     },
     "error": {
