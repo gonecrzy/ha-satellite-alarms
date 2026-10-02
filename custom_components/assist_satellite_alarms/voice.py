@@ -433,9 +433,7 @@ class VoiceController:
             response += f"; and {len(records) - len(shown)} more"
         return f"{response}."
 
-    async def async_skip_alarm(
-        self, user_input: ConversationInput, result: RecognizeResult
-    ) -> str:
+    async def async_skip_alarm(self, user_input: ConversationInput, result: RecognizeResult) -> str:
         """Skip one upcoming occurrence without changing the parent schedule."""
         try:
             endpoint_id = self.resolve_endpoint_id(user_input)
