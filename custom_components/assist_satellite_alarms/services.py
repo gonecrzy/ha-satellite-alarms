@@ -337,7 +337,6 @@ async def async_register_services(
                 "reason": str(err),
                 "occurrence": occurrence,
             }
-            hass.bus.async_fire(EVENT_ALARM_FAILED, result)
             return result
         except (AlarmNotFoundError, EndpointNotFoundError, ValueError) as err:
             raise _service_error(err) from err
