@@ -183,8 +183,7 @@ class PlaybackManager:
         unavailable = {STATE_UNAVAILABLE, STATE_UNKNOWN}
 
         if (
-            satellite_state is None
-            or satellite_state.state in unavailable
+            (satellite_state is not None and satellite_state.state in unavailable)
             or player_state is None
             or player_state.state in unavailable
         ):
