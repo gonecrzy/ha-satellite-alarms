@@ -30,7 +30,6 @@ from .const import (
     ATTR_TIME,
     CONF_NAME,
     DOMAIN,
-    EVENT_ALARM_FAILED,
     EVENT_ALARM_OVERRIDE_CREATED,
     EVENT_ALARM_SKIPPED,
     EVENT_ALARM_SNOOZED,
@@ -89,8 +88,10 @@ def _validate_action_list(value: Any) -> list[dict[str, Any]]:
     """Validate a persisted list of simple Home Assistant service actions."""
     if value is None:
         return []
+    if isinstance(value, dict):
+        value = [value]
     if not isinstance(value, list):
-        raise vol.Invalid("Actions must be a list")
+        raise vol.Invalid("Actions must be a mapping or list of mappings")
 
     normalized: list[dict[str, Any]] = []
     for item in value:
