@@ -61,9 +61,7 @@ async def async_get_config_entry_diagnostics(
                     "scheduler_entity_id": response.get(
                         "scheduler_entity_id", record.scheduler_entity_id
                     ),
-                    "scheduler_found": bool(
-                        adapter and adapter.find_entity_id(record.alarm_id)
-                    ),
+                    "scheduler_found": bool(adapter and adapter.find_entity_id(record.alarm_id)),
                     "time": record.metadata.get("time"),
                     "recurrence": record.metadata.get("recurrence"),
                     "date": record.metadata.get("date"),
@@ -106,9 +104,7 @@ async def async_get_config_entry_diagnostics(
             "entry_id": endpoint.entry_id,
             "name": endpoint.name,
             "area_id": endpoint.area_id,
-            "playback_mode": entry.options.get(
-                CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE
-            ),
+            "playback_mode": entry.options.get(CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE),
             "playback_targets": playback_targets,
         },
         "options": dict(entry.options),
