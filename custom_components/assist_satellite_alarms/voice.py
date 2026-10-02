@@ -285,9 +285,7 @@ class VoiceController:
             for entry in entries:
                 endpoint = AlarmEndpoint.from_config_entry(entry)
                 if any(
-                    (
-                        satellite_entry := entity_registry.async_get(satellite_entity_id)
-                    )
+                    (satellite_entry := entity_registry.async_get(satellite_entity_id))
                     and satellite_entry.device_id == user_input.device_id
                     for satellite_entity_id in endpoint.assist_satellite_entity_ids
                 ):
