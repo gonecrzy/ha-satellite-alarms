@@ -14,8 +14,14 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_MEDIA_PLAYER,
     CONF_NAME,
     DOMAIN,
+    META_ALARM_MEDIA,
+    META_ALARM_VOLUME,
     META_DATE,
+    META_FAILURE_ACTIONS,
+    META_POST_ACTIONS,
+    META_PRE_ACTIONS,
     META_RECURRENCE,
+    META_SNOOZE_MINUTES,
     META_TIME,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
@@ -410,3 +416,121 @@ async def test_shutdown_drops_queued_alarms(hass: HomeAssistant) -> None:
 
     assert playback.active_for_endpoint(entry.entry_id) is None
     assert playback.queued_for_endpoint(entry.entry_id) == ()
+
+
+async def test_per_alarm_media_volume_and_actions(hass: HomeAssistant) -> None:
+    """Per-alarm playback overrides and pre/post service actions should be honored."""
+    entry = _add_endpoint(hass)
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.25})
+    calls = _register_playback_services(hass)
+
+    async def capture_light(call: ServiceCall) -> None:
+        calls.append(("light", call.service, dict(call.data)))
+
+    hass.services.async_register("light", "turn_on", capture_light)
+    hass.services.async_register("light", "turn_off", capture_light)
+
+    registry = await _registry_with_alarm(
+        hass, alarm_id="alarm-1", endpoint_id=entry.entry_id
+    )
+    record = registry.get("alarm-1")
+    assert record is not None
+    record.metadata[META_ALARM_MEDIA] = "media-source://media_source/local/work.mp3"
+    record.metadata[META_ALARM_VOLUME] = 0.55
+    record.metadata[META_PRE_ACTIONS] = [
+        {"action": "light.turn_on", "data": {"brightness_pct": 20}}
+    ]
+    record.metadata[META_POST_ACTIONS] = [
+        {"action": "light.turn_off", "data": {}}
+    ]
+    await registry.async_upsert(record)
+
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+    await playback.async_start("alarm-1")
+    await asyncio.sleep(0)
+    await playback.async_stop(alarm_id="alarm-1")
+
+    assert any(call[:2] == ("light", "turn_on") for call in calls)
+    assert any(call[:2] == ("light", "turn_off") for call in calls)
+
+    announce = next(
+        call for call in calls if call[:2] == ("assist_satellite", "announce")
+    )
+    assert announce[2]["media_id"] == "media-source://media_source/local/work.mp3"
+
+    volume_levels = [
+        call[2]["volume_level"]
+        for call in calls
+        if call[:2] == ("media_player", "volume_set")
+    ]
+    assert 0.55 in volume_levels
+    assert volume_levels[-1] == 0.25
+
+
+async def test_per_alarm_default_snooze_overrides_endpoint(hass: HomeAssistant) -> None:
+    """Per-alarm snooze should override the endpoint default."""
+    entry = _add_endpoint(
+        hass,
+        options={CONF_DEFAULT_SNOOZE_MINUTES: 10},
+    )
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
+    calls = _register_playback_services(hass)
+    registry = await _registry_with_alarm(
+        hass, alarm_id="alarm-1", endpoint_id=entry.entry_id
+    )
+    record = registry.get("alarm-1")
+    assert record is not None
+    record.metadata[META_SNOOZE_MINUTES] = 17
+    await registry.async_upsert(record)
+
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+    await playback.async_start("alarm-1")
+    await asyncio.sleep(0)
+    _active, minutes, _entity_id = await playback.async_snooze(alarm_id="alarm-1")
+
+    assert minutes == 17
+    snooze_add = next(
+        call
+        for call in calls
+        if call[:2] == ("scheduler", "add")
+        and any(":snooze:" in tag for tag in call[2].get("tags", []))
+    )
+    assert snooze_add[2]["repeat_type"] == "single"
+
+
+async def test_failure_hook_runs_service_action_and_emits_event(
+    hass: HomeAssistant,
+) -> None:
+    """Playback failure hooks should run once and publish a failure event."""
+    entry = _add_endpoint(hass)
+    registry = await _registry_with_alarm(
+        hass, alarm_id="alarm-1", endpoint_id=entry.entry_id
+    )
+    record = registry.get("alarm-1")
+    assert record is not None
+    record.metadata[META_FAILURE_ACTIONS] = [
+        {"action": "notify.notify", "data": {"message": "Alarm failed"}}
+    ]
+    await registry.async_upsert(record)
+
+    calls: list[dict] = []
+
+    async def capture_notify(call: ServiceCall) -> None:
+        calls.append(dict(call.data))
+
+    hass.services.async_register("notify", "notify", capture_notify)
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+    events = []
+    unsub = hass.bus.async_listen(
+        "assist_satellite_alarms_alarm_failed", events.append
+    )
+    try:
+        await playback.async_handle_failure("alarm-1", "speaker unavailable")
+        await hass.async_block_till_done()
+    finally:
+        unsub()
+
+    assert calls == [{"message": "Alarm failed"}]
+    assert len(events) == 1
+    assert events[0].data["alarm_id"] == "alarm-1"
+    assert events[0].data["reason"] == "speaker unavailable"
