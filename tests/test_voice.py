@@ -5,8 +5,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components import conversation
 from homeassistant.components.conversation import ConversationInput
 from homeassistant.core import Context, HomeAssistant, ServiceCall
+from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -276,3 +278,33 @@ async def test_voice_create_dispatches_weekday_without_duplicate(
     assert len(manager.registry.all()) == 1
     assert len([call for call in calls if call[0] == "add"]) == 1
     assert calls[0][1]["weekdays"] == ["workday"]
+
+
+async def test_conversation_trigger_creates_one_weekday_alarm(
+    hass: HomeAssistant,
+) -> None:
+    """The real conversation trigger path should route and create only one alarm."""
+    assert await async_setup_component(hass, "conversation", {})
+    entry = _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+    voice.register()
+
+    try:
+        result = await conversation.async_converse(
+            hass=hass,
+            text="wake me at 6:30 on weekdays",
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    assert result.response.speech["plain"]["speech"] == "Alarm set for 6:30 AM on weekdays."
+    assert len(manager.registry.for_endpoint(entry.entry_id)) == 1
+    add_calls = [call for call in calls if call[0] == "add"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1]["timeslots"][0]["start"] == "06:30:00"
+    assert add_calls[0][1]["weekdays"] == ["workday"]
