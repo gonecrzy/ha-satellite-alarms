@@ -239,7 +239,7 @@ class VoiceController:
         """Create an alarm from a deterministic sentence."""
         try:
             endpoint_id = self.resolve_endpoint_id(user_input)
-            time_value = parse_alarm_time(self._slot(result, "time"))
+            time_value = parse_alarm_time(_clean_alarm_time_slot(self._slot(result, "time")))
             date_value = None
             if date_offset is not None:
                 date_value = (dt_util.now().date() + timedelta(days=date_offset)).isoformat()
@@ -341,6 +341,37 @@ class VoiceController:
             return "I couldn't cancel the alarm."
 
         return f"Canceled the alarm {format_trigger_time(trigger)}."
+
+
+def _clean_alarm_time_slot(value: str) -> str:
+    """Remove recurrence/date words that a broad wildcard may capture."""
+    text = _normalize_spoken_text(value)
+
+    for prefix in ("tomorrow at ", "today at ", "at ", "for "):
+        if text.startswith(prefix):
+            text = text[len(prefix) :].strip()
+            break
+
+    suffixes = (
+        " on weekdays",
+        " weekdays",
+        " on weekends",
+        " weekends",
+        " every day",
+        " daily",
+        " tomorrow",
+        " today",
+    )
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if text.endswith(suffix):
+                text = text[: -len(suffix)].strip()
+                changed = True
+                break
+
+    return text
 
 
 def _normalize_spoken_text(value: str) -> str:
