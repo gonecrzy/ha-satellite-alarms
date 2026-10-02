@@ -1,2 +1,5 @@
 pytest-homeassistant-custom-component==0.13.367
 pytest-cov>=7.1.0,<8.0
+gazetteer-matcher==1.1.0
+hassil==3.12.1
+home-assistant-intents==2026.8.28
