@@ -8,6 +8,8 @@ from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.assist_satellite_alarms.const import (
     DOMAIN,
+    OCCURRENCE_OVERRIDE,
+    OCCURRENCE_SNOOZE,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
     RECURRENCE_SELECTED_DAYS,
@@ -217,3 +219,29 @@ def test_selected_days_schedule_requires_valid_days() -> None:
             date=None,
             days=["mon", "noday"],
         )
+
+
+def test_transient_payloads_identify_occurrence_type() -> None:
+    """Snooze and override callbacks must bypass parent skip-next handling."""
+    snooze = SchedulerAdapter.build_snooze_payload(
+        alarm_id="abc123",
+        occurrence_id="snooze456",
+        trigger_at=datetime.fromisoformat("2099-09-30T06:40:00-04:00"),
+    )
+    snooze_data = snooze["timeslots"][0]["actions"][0]["service_data"]
+    assert snooze_data["alarm_id"] == "abc123"
+    assert snooze_data["occurrence"] == OCCURRENCE_SNOOZE
+    assert snooze_data["occurrence_id"] == "snooze456"
+
+    override = SchedulerAdapter.build_override_payload(
+        alarm_id="abc123",
+        occurrence_id="override789",
+        time="07:00:00",
+        date="2099-09-30",
+    )
+    override_data = override["timeslots"][0]["actions"][0]["service_data"]
+    assert override_data["alarm_id"] == "abc123"
+    assert override_data["occurrence"] == OCCURRENCE_OVERRIDE
+    assert override_data["occurrence_id"] == "override789"
+    assert override["start_date"] == "2099-09-30"
+    assert override["timeslots"][0]["start"] == "07:00:00"
