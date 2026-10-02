@@ -1,7 +1,7 @@
 """Tests for Satellite Alarms integration setup."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -48,7 +48,14 @@ async def test_setup_registers_services_and_loads_endpoint(hass: HomeAssistant) 
     )
     entry.add_to_hass(hass)
 
-    assert await async_setup_entry(hass, entry) is True
+    with patch.object(
+        hass.config_entries,
+        "async_forward_entry_setups",
+        AsyncMock(),
+    ) as forward_setups:
+        assert await async_setup_entry(hass, entry) is True
+
+    forward_setups.assert_awaited_once()
     assert hass.data[DOMAIN][DATA_RECONCILED] is True
     assert entry.runtime_data.name == "Bedroom"
     assert entry.runtime_data.media_player_entity_id == "media_player.bedroom"
