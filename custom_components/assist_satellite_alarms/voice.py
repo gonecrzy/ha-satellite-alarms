@@ -17,33 +17,19 @@ from .alarm_manager import AlarmManager
 from .const import (
     CONF_ASSIST_SATELLITE,
     DOMAIN,
+    META_RECURRENCE,
+    META_TIME,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
+    RECURRENCE_SELECTED_DAYS,
     RECURRENCE_WEEKDAYS,
     RECURRENCE_WEEKENDS,
 )
+from .models import AlarmRecord
 from .playback import ActiveAlarmNotFoundError, PlaybackError, PlaybackManager
 
 _LOGGER = logging.getLogger(__name__)
 
-_ONE_TIME_SENTENCES = [
-    "set [an] alarm (for|at) {time}",
-    "set [my] alarm (for|at) {time}",
-    "wake me [up] at {time}",
-    "wake me [up] {time}",
-]
-_TODAY_SENTENCES = [
-    "set [an] alarm (for|at) {time} today",
-    "set [an] alarm today (for|at) {time}",
-    "wake me [up] at {time} today",
-    "wake me [up] today at {time}",
-]
-_TOMORROW_SENTENCES = [
-    "set [an] alarm (for|at) {time} tomorrow",
-    "set [an] alarm tomorrow (for|at) {time}",
-    "wake me [up] at {time} tomorrow",
-    "wake me [up] tomorrow at {time}",
-]
 _DAILY_SENTENCES = [
     "set [a] daily alarm (for|at) {time}",
     "set [an] alarm (for|at) {time} every day",
@@ -62,6 +48,28 @@ _WEEKEND_SENTENCES = [
     "wake me [up] at {time} on weekends",
     "wake me [up] at {time} weekends",
 ]
+_NAMED_CREATE_SENTENCES = [
+    "set [an] alarm (called|named) {name} (for|at) {time}",
+    "set [a] {name} alarm (for|at) {time}",
+]
+_TODAY_SENTENCES = [
+    "set [an] alarm (for|at) {time} today",
+    "set [an] alarm today (for|at) {time}",
+    "wake me [up] at {time} today",
+    "wake me [up] today at {time}",
+]
+_TOMORROW_SENTENCES = [
+    "set [an] alarm (for|at) {time} tomorrow",
+    "set [an] alarm tomorrow (for|at) {time}",
+    "wake me [up] at {time} tomorrow",
+    "wake me [up] tomorrow at {time}",
+]
+_ONE_TIME_SENTENCES = [
+    "set [an] alarm (for|at) {time}",
+    "set [my] alarm (for|at) {time}",
+    "wake me [up] at {time}",
+    "wake me [up] {time}",
+]
 _STOP_SENTENCES = [
     "(stop|dismiss|turn off) [the] alarm",
     "(stop|dismiss) my alarm",
@@ -77,18 +85,32 @@ _NEXT_SENTENCES = [
     "(what time is|when is) the next alarm",
     "when does my next alarm go off",
 ]
+_QUERY_SENTENCES = [
+    *_NEXT_SENTENCES,
+    "(what time is|when is) my {selector} alarm",
+    "(what time is|when is) the {selector} alarm",
+]
+_LIST_SENTENCES = [
+    "what alarms do I have",
+    "what are my alarms",
+    "list my alarms",
+    "tell me my alarms",
+]
 _CANCEL_SENTENCES = [
     "(cancel|delete|remove) [my] next alarm",
     "(cancel|delete|remove) my alarm",
+    "(cancel|delete|remove) my {selector} alarm",
+    "(cancel|delete|remove) the {selector} alarm",
 ]
 
 _CREATE_SENTENCES = [
-    *_ONE_TIME_SENTENCES,
-    *_TODAY_SENTENCES,
-    *_TOMORROW_SENTENCES,
     *_DAILY_SENTENCES,
     *_WEEKDAY_SENTENCES,
     *_WEEKEND_SENTENCES,
+    *_NAMED_CREATE_SENTENCES,
+    *_TODAY_SENTENCES,
+    *_TOMORROW_SENTENCES,
+    *_ONE_TIME_SENTENCES,
 ]
 
 _SMALL_NUMBERS = {
@@ -119,6 +141,35 @@ _TENS = {
     "forty": 40,
     "fifty": 50,
 }
+_WEEKDAY_WORDS = {
+    "monday": "mon",
+    "mon": "mon",
+    "tuesday": "tue",
+    "tue": "tue",
+    "tues": "tue",
+    "wednesday": "wed",
+    "wed": "wed",
+    "thursday": "thu",
+    "thu": "thu",
+    "thur": "thu",
+    "thurs": "thu",
+    "friday": "fri",
+    "fri": "fri",
+    "saturday": "sat",
+    "sat": "sat",
+    "sunday": "sun",
+    "sun": "sun",
+}
+_WEEKDAY_LABELS = {
+    "mon": "Monday",
+    "tue": "Tuesday",
+    "wed": "Wednesday",
+    "thu": "Thursday",
+    "fri": "Friday",
+    "sat": "Saturday",
+    "sun": "Sunday",
+}
+_WEEKDAY_ORDER = tuple(_WEEKDAY_LABELS)
 
 
 class VoiceCommandError(ValueError):
@@ -150,8 +201,9 @@ class VoiceController:
             (_CREATE_SENTENCES, self.async_create),
             (_STOP_SENTENCES, self.async_stop),
             (_SNOOZE_SENTENCES, self.async_snooze),
-            (_NEXT_SENTENCES, self.async_next_alarm),
-            (_CANCEL_SENTENCES, self.async_cancel_next),
+            (_QUERY_SENTENCES, self.async_query_alarm),
+            (_LIST_SENTENCES, self.async_list_alarms),
+            (_CANCEL_SENTENCES, self.async_cancel_alarm),
         ]
 
         for sentences, callback in groups:
@@ -165,13 +217,19 @@ class VoiceController:
     async def async_create(self, user_input: ConversationInput, result: RecognizeResult) -> str:
         """Classify and create an alarm from one deterministic voice trigger."""
         text = _normalize_spoken_text(user_input.text)
+        selected_days = _selected_days_from_command(text)
 
         if "weekday" in text:
             recurrence = RECURRENCE_WEEKDAYS
+            selected_days = None
         elif "weekend" in text:
             recurrence = RECURRENCE_WEEKENDS
+            selected_days = None
         elif "daily" in text or "every day" in text:
             recurrence = RECURRENCE_DAILY
+            selected_days = None
+        elif selected_days:
+            recurrence = RECURRENCE_SELECTED_DAYS
         else:
             recurrence = RECURRENCE_ONCE
 
@@ -182,11 +240,14 @@ class VoiceController:
             elif "today" in text:
                 date_offset = 0
 
+        name = self._optional_slot(result, "name")
         return await self.async_create_alarm(
             user_input,
             result,
             recurrence=recurrence,
             date_offset=date_offset,
+            days=selected_days,
+            name=name,
         )
 
     def resolve_endpoint_id(self, user_input: ConversationInput) -> str:
@@ -226,6 +287,15 @@ class VoiceController:
             raise VoiceCommandError(f"I couldn't understand the {name}.")
         return str(entity.value).strip()
 
+    @staticmethod
+    def _optional_slot(result: RecognizeResult, name: str) -> str | None:
+        """Return an optional wildcard slot."""
+        entity = result.entities.get(name)
+        if entity is None:
+            return None
+        value = str(entity.value).strip()
+        return value or None
+
     async def async_create_alarm(
         self,
         user_input: ConversationInput,
@@ -233,6 +303,8 @@ class VoiceController:
         *,
         recurrence: str,
         date_offset: int | None,
+        days: list[str] | None = None,
+        name: str | None = None,
     ) -> str:
         """Create an alarm from a deterministic sentence."""
         try:
@@ -247,6 +319,8 @@ class VoiceController:
                 time_value=time_value,
                 recurrence=recurrence,
                 date_value=date_value,
+                days=days,
+                name=name,
             )
         except (VoiceCommandError, ValueError) as err:
             return str(err)
@@ -254,13 +328,8 @@ class VoiceController:
             _LOGGER.exception("Could not create alarm from voice command")
             return "I couldn't create that alarm."
 
-        suffix = {
-            RECURRENCE_ONCE: "",
-            RECURRENCE_DAILY: " every day",
-            RECURRENCE_WEEKDAYS: " on weekdays",
-            RECURRENCE_WEEKENDS: " on weekends",
-        }[recurrence]
-        return f"Alarm set for {format_clock_time(str(record.metadata['time']))}{suffix}."
+        prefix = f"{record.name} alarm set" if name else "Alarm set"
+        return f"{prefix} for {format_clock_time(str(record.metadata['time']))}{_recurrence_suffix(record)}."
 
     async def async_stop(self, user_input: ConversationInput, _result: RecognizeResult) -> str:
         """Stop the alarm ringing on the originating endpoint."""
@@ -303,12 +372,17 @@ class VoiceController:
             return "I couldn't snooze the alarm."
         return f"Snoozed for {actual_minutes} minutes."
 
-    async def async_next_alarm(
-        self, user_input: ConversationInput, _result: RecognizeResult
+    async def async_query_alarm(
+        self, user_input: ConversationInput, result: RecognizeResult
     ) -> str:
-        """Report the next scheduled alarm for the originating endpoint."""
+        """Report the next alarm or a named/time-selected alarm."""
         try:
             endpoint_id = self.resolve_endpoint_id(user_input)
+            selector = self._optional_slot(result, "selector")
+            if selector:
+                record = self._resolve_alarm_selector(endpoint_id, selector)
+                return f"{_display_alarm_name(record)} is set {_alarm_schedule_phrase(record, self.manager)}."
+
             next_alarm = self.manager.next_alarm_for_endpoint(endpoint_id)
         except VoiceCommandError as err:
             return str(err)
@@ -319,16 +393,49 @@ class VoiceController:
         _record, trigger = next_alarm
         return f"Your next alarm is {format_trigger_time(trigger)}."
 
-    async def async_cancel_next(
+    async def async_list_alarms(
         self, user_input: ConversationInput, _result: RecognizeResult
     ) -> str:
-        """Delete the next scheduled alarm for the originating endpoint."""
+        """List alarms configured for the originating endpoint."""
         try:
             endpoint_id = self.resolve_endpoint_id(user_input)
-            next_alarm = self.manager.next_alarm_for_endpoint(endpoint_id)
-            if next_alarm is None:
-                return "There are no scheduled alarms in this room."
-            record, trigger = next_alarm
+            records = self.manager.sorted_alarms_for_endpoint(endpoint_id)
+        except VoiceCommandError as err:
+            return str(err)
+
+        if not records:
+            return "There are no scheduled alarms in this room."
+
+        shown = records[:5]
+        descriptions = [
+            f"{_display_alarm_name(record)} {_alarm_schedule_phrase(record, self.manager)}"
+            for record in shown
+        ]
+        response = f"You have {len(records)} alarm{'s' if len(records) != 1 else ''}: "
+        response += "; ".join(descriptions)
+        if len(records) > len(shown):
+            response += f"; and {len(records) - len(shown)} more"
+        return f"{response}."
+
+    async def async_cancel_alarm(
+        self, user_input: ConversationInput, result: RecognizeResult
+    ) -> str:
+        """Delete the next alarm or a named/time-selected alarm."""
+        try:
+            endpoint_id = self.resolve_endpoint_id(user_input)
+            selector = self._optional_slot(result, "selector")
+            if selector:
+                record = self._resolve_alarm_selector(endpoint_id, selector)
+                description = (
+                    f"{_display_alarm_name(record)} {_alarm_schedule_phrase(record, self.manager)}"
+                )
+            else:
+                next_alarm = self.manager.next_alarm_for_endpoint(endpoint_id)
+                if next_alarm is None:
+                    return "There are no scheduled alarms in this room."
+                record, trigger = next_alarm
+                description = f"the alarm {format_trigger_time(trigger)}"
+
             await self.manager.async_delete(record.alarm_id)
         except VoiceCommandError as err:
             return str(err)
@@ -336,7 +443,35 @@ class VoiceController:
             _LOGGER.exception("Could not cancel alarm from voice command")
             return "I couldn't cancel the alarm."
 
-        return f"Canceled the alarm {format_trigger_time(trigger)}."
+        return f"Canceled {description}."
+
+    def _resolve_alarm_selector(self, endpoint_id: str, selector: str) -> AlarmRecord:
+        """Resolve a room-local alarm by exact name first, then by time."""
+        name_matches = self.manager.find_by_name(endpoint_id, selector)
+        if len(name_matches) == 1:
+            return name_matches[0]
+        if len(name_matches) > 1:
+            raise VoiceCommandError(
+                f"More than one alarm is named {selector} in this room."
+            )
+
+        try:
+            time_value = parse_alarm_time(_clean_alarm_time_slot(selector))
+        except VoiceCommandError:
+            raise VoiceCommandError(
+                f"I couldn't find an alarm called {selector} in this room."
+            ) from None
+
+        time_matches = self.manager.find_by_time(endpoint_id, time_value)
+        if len(time_matches) == 1:
+            return time_matches[0]
+        if len(time_matches) > 1:
+            raise VoiceCommandError(
+                f"More than one alarm is set for {format_clock_time(time_value)} in this room."
+            )
+        raise VoiceCommandError(
+            f"I couldn't find an alarm at {format_clock_time(time_value)} in this room."
+        )
 
 
 def _clean_alarm_time_slot(value: str) -> str:
@@ -347,6 +482,11 @@ def _clean_alarm_time_slot(value: str) -> str:
         if text.startswith(prefix):
             text = text[len(prefix) :].strip()
             break
+
+    if " on " in text:
+        candidate_time, candidate_days = text.rsplit(" on ", 1)
+        if parse_weekday_selection(candidate_days):
+            text = candidate_time.strip()
 
     suffixes = (
         " on weekdays",
@@ -374,6 +514,7 @@ def _normalize_spoken_text(value: str) -> str:
     """Normalize speech-to-text output for deterministic parsing."""
     value = value.lower().strip()
     value = value.replace(".", "")
+    value = value.replace(",", " ")
     value = value.replace("-", " ")
     value = re.sub(r"\s+", " ", value)
     return value
@@ -498,6 +639,27 @@ def parse_snooze_minutes(value: str) -> int:
     return total
 
 
+def parse_weekday_selection(value: str) -> list[str]:
+    """Parse weekday names from a deterministic spoken phrase."""
+    text = _normalize_spoken_text(value)
+    found = {
+        canonical
+        for token in text.split()
+        if (canonical := _WEEKDAY_WORDS.get(token)) is not None
+    }
+    return [day for day in _WEEKDAY_ORDER if day in found]
+
+
+def _selected_days_from_command(value: str) -> list[str] | None:
+    """Return selected weekdays only when they occur in an 'on ...' command suffix."""
+    text = _normalize_spoken_text(value)
+    if " on " not in text:
+        return None
+    suffix = text.rsplit(" on ", 1)[1]
+    days = parse_weekday_selection(suffix)
+    return days or None
+
+
 def format_clock_time(value: str) -> str:
     """Format HH:MM:SS for a concise spoken response."""
     parsed = dt_util.parse_time(value)
@@ -522,3 +684,47 @@ def format_trigger_time(trigger) -> str:
     else:
         date_text = f"on {local.strftime('%A, %B')} {local.day}"
     return f"at {format_clock_time(local.strftime('%H:%M:%S'))} {date_text}"
+
+
+def _format_days(days: list[str] | tuple[str, ...] | None) -> str:
+    """Format canonical weekdays for speech."""
+    labels = [_WEEKDAY_LABELS[day] for day in _WEEKDAY_ORDER if days and day in days]
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} and {labels[1]}"
+    return f"{', '.join(labels[:-1])}, and {labels[-1]}"
+
+
+def _recurrence_suffix(record: AlarmRecord) -> str:
+    """Return a spoken recurrence suffix for an alarm."""
+    recurrence = record.metadata.get(META_RECURRENCE)
+    if recurrence == RECURRENCE_DAILY:
+        return " every day"
+    if recurrence == RECURRENCE_WEEKDAYS:
+        return " on weekdays"
+    if recurrence == RECURRENCE_WEEKENDS:
+        return " on weekends"
+    if recurrence == RECURRENCE_SELECTED_DAYS:
+        days = _format_days(record.metadata.get("days"))
+        return f" on {days}" if days else ""
+    return ""
+
+
+def _display_alarm_name(record: AlarmRecord) -> str:
+    """Return a concise spoken alarm name."""
+    name = (record.name or "alarm").strip()
+    return name if name.lower().endswith("alarm") else f"{name} alarm"
+
+
+def _alarm_schedule_phrase(record: AlarmRecord, manager: AlarmManager) -> str:
+    """Return a concise spoken schedule description for an alarm."""
+    recurrence = record.metadata.get(META_RECURRENCE)
+    if recurrence == RECURRENCE_ONCE:
+        trigger = manager.trigger_for_record(record)
+        if trigger is not None:
+            return format_trigger_time(trigger)
+    time_value = str(record.metadata.get(META_TIME) or "")
+    return f"at {format_clock_time(time_value)}{_recurrence_suffix(record)}"
