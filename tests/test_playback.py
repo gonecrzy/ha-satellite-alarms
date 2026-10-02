@@ -8,11 +8,13 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.assist_satellite_alarms.const import (
     BUILTIN_ALARM_MEDIA_URL,
+    CONF_ADDITIONAL_PLAYBACK_TARGETS,
     CONF_ASSIST_SATELLITE,
     CONF_DEFAULT_ALARM_MEDIA,
     CONF_DEFAULT_SNOOZE_MINUTES,
     CONF_MEDIA_PLAYER,
     CONF_NAME,
+    CONF_PLAYBACK_MODE,
     CONF_VOLUME_RAMP_ENABLED,
     DOMAIN,
     META_ALARM_MEDIA,
@@ -24,6 +26,8 @@ from custom_components.assist_satellite_alarms.const import (
     META_RECURRENCE,
     META_SNOOZE_MINUTES,
     META_TIME,
+    PLAYBACK_MODE_ALL,
+    PLAYBACK_MODE_FALLBACK,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
     SCHEDULER_DOMAIN,
@@ -45,6 +49,7 @@ def _add_endpoint(
     satellite: str = "assist_satellite.bedroom",
     player: str = "media_player.bedroom",
     options: dict | None = None,
+    additional_targets: list[dict] | None = None,
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -53,6 +58,7 @@ def _add_endpoint(
             CONF_NAME: entry_id,
             CONF_ASSIST_SATELLITE: satellite,
             CONF_MEDIA_PLAYER: player,
+            CONF_ADDITIONAL_PLAYBACK_TARGETS: additional_targets or [],
         },
         options=options or {},
         entry_id=entry_id,
@@ -521,3 +527,119 @@ async def test_failure_hook_runs_service_action_and_emits_event(
     assert len(events) == 1
     assert events[0].data["alarm_id"] == "alarm-1"
     assert events[0].data["reason"] == "speaker unavailable"
+
+
+async def test_all_room_speakers_ring_and_restore_independently(
+    hass: HomeAssistant,
+) -> None:
+    """All mode should ring every available room pair and restore each prior volume."""
+    entry = _add_endpoint(
+        hass,
+        options={
+            CONF_PLAYBACK_MODE: PLAYBACK_MODE_ALL,
+            CONF_VOLUME_RAMP_ENABLED: False,
+        },
+        additional_targets=[
+            {
+                CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_right",
+                CONF_MEDIA_PLAYER: "media_player.bedroom_right",
+            }
+        ],
+    )
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.25})
+    hass.states.async_set("media_player.bedroom_right", "idle", {"volume_level": 0.45})
+    calls = _register_playback_services(hass)
+    registry = await _registry_with_alarm(
+        hass, alarm_id="alarm-all", endpoint_id=entry.entry_id
+    )
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+
+    active = await playback.async_start("alarm-all")
+    await asyncio.sleep(0)
+    await playback.async_stop(alarm_id="alarm-all")
+
+    assert len(active.targets) == 2
+    announce_targets = {
+        call[2]["entity_id"]
+        for call in calls
+        if call[:2] == ("assist_satellite", "announce")
+    }
+    assert announce_targets == {
+        "assist_satellite.bedroom",
+        "assist_satellite.bedroom_right",
+    }
+
+    volume_calls = [
+        call[2]
+        for call in calls
+        if call[:2] == ("media_player", "volume_set")
+    ]
+    restored = {
+        item["entity_id"]: item["volume_level"]
+        for item in volume_calls[-2:]
+    }
+    assert restored == {
+        "media_player.bedroom": 0.25,
+        "media_player.bedroom_right": 0.45,
+    }
+
+
+async def test_fallback_mode_uses_next_available_room_target(
+    hass: HomeAssistant,
+) -> None:
+    """Fallback mode should skip an unavailable primary pair."""
+    entry = _add_endpoint(
+        hass,
+        options={
+            CONF_PLAYBACK_MODE: PLAYBACK_MODE_FALLBACK,
+            CONF_VOLUME_RAMP_ENABLED: False,
+        },
+        additional_targets=[
+            {
+                CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_right",
+                CONF_MEDIA_PLAYER: "media_player.bedroom_right",
+            }
+        ],
+    )
+    hass.states.async_set("media_player.bedroom", "unavailable", {"volume_level": 0.2})
+    hass.states.async_set("media_player.bedroom_right", "idle", {"volume_level": 0.4})
+    calls = _register_playback_services(hass)
+    registry = await _registry_with_alarm(
+        hass, alarm_id="alarm-fallback", endpoint_id=entry.entry_id
+    )
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+
+    active = await playback.async_start("alarm-fallback")
+    await asyncio.sleep(0)
+    await playback.async_stop(alarm_id="alarm-fallback")
+
+    assert active.assist_satellite_entity_id == "assist_satellite.bedroom_right"
+    announce = next(
+        call for call in calls if call[:2] == ("assist_satellite", "announce")
+    )
+    assert announce[2]["entity_id"] == "assist_satellite.bedroom_right"
+
+
+async def test_primary_mode_does_not_silently_use_secondary_target(
+    hass: HomeAssistant,
+) -> None:
+    """Primary mode should fail when the primary pair is unavailable."""
+    entry = _add_endpoint(
+        hass,
+        additional_targets=[
+            {
+                CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_right",
+                CONF_MEDIA_PLAYER: "media_player.bedroom_right",
+            }
+        ],
+    )
+    hass.states.async_set("media_player.bedroom", "unavailable", {"volume_level": 0.2})
+    hass.states.async_set("media_player.bedroom_right", "idle", {"volume_level": 0.4})
+    _register_playback_services(hass)
+    registry = await _registry_with_alarm(
+        hass, alarm_id="alarm-primary", endpoint_id=entry.entry_id
+    )
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+
+    with pytest.raises(PlaybackError, match="Primary alarm satellite/media player"):
+        await playback.async_start("alarm-primary")
