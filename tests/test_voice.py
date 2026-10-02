@@ -50,12 +50,13 @@ def _add_endpoint(hass: HomeAssistant) -> MockConfigEntry:
 
 def _input(
     *,
+    text: str = "test",
     satellite_id: str | None = "assist_satellite.bedroom",
     device_id: str | None = None,
 ) -> ConversationInput:
     """Create a conversation input matching a voice-satellite request."""
     return ConversationInput(
-        text="test",
+        text=text,
         context=Context(),
         conversation_id=None,
         device_id=device_id,
@@ -206,7 +207,7 @@ async def test_voice_stop_and_snooze_are_endpoint_local(hass: HomeAssistant) -> 
     playback.async_stop.assert_awaited_once_with(endpoint_id=entry.entry_id)
 
     assert (
-        await voice.async_snooze_for(_input(), _result(duration="15 minutes"))
+        await voice.async_snooze(_input(), _result(duration="15 minutes"))
         == "Snoozed for 15 minutes."
     )
     playback.async_snooze.assert_awaited_once_with(
@@ -239,7 +240,7 @@ async def test_voice_next_and_cancel_next(hass: HomeAssistant) -> None:
 
 def test_voice_registers_and_unregisters_sentence_groups(hass: HomeAssistant, monkeypatch) -> None:
     """Voice controller should own and clean up its sentence registrations."""
-    unregister_callbacks = [MagicMock() for _ in range(11)]
+    unregister_callbacks = [MagicMock() for _ in range(5)]
     agent_manager = MagicMock()
     agent_manager.register_trigger.side_effect = unregister_callbacks
 
@@ -251,8 +252,27 @@ def test_voice_registers_and_unregisters_sentence_groups(hass: HomeAssistant, mo
     voice = VoiceController(hass, MagicMock(), MagicMock())
     voice.register()
 
-    assert agent_manager.register_trigger.call_count == 11
+    assert agent_manager.register_trigger.call_count == 5
 
     voice.unregister()
     for unregister in unregister_callbacks:
         unregister.assert_called_once_with()
+
+
+async def test_voice_create_dispatches_weekday_without_duplicate(
+    hass: HomeAssistant,
+) -> None:
+    """One matched create trigger should classify recurrence and create one alarm."""
+    _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+
+    response = await voice.async_create(
+        _input(text="wake me at 6:30 on weekdays"),
+        _result(time="6:30"),
+    )
+
+    assert response == "Alarm set for 6:30 AM on weekdays."
+    assert len(manager.registry.all()) == 1
+    assert len([call for call in calls if call[0] == "add"]) == 1
+    assert calls[0][1]["weekdays"] == ["workday"]
