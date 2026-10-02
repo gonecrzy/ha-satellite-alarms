@@ -2,6 +2,7 @@
 
 from homeassistant.core import HomeAssistant, ServiceCall
 
+from custom_components.assist_satellite_alarms.config_flow import SatelliteAlarmsConfigFlow
 from custom_components.assist_satellite_alarms.const import (
     CONF_ADDITIONAL_ASSIST_SATELLITES,
     CONF_ADDITIONAL_MEDIA_PLAYERS,
@@ -37,21 +38,18 @@ async def test_config_flow_creates_room_with_additional_target(
         hass.services.async_register(SCHEDULER_DOMAIN, service, _noop)
     _prepare_entities(hass)
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": "user"},
-    )
-    assert result["type"] == "form"
+    flow = SatelliteAlarmsConfigFlow()
+    flow.hass = hass
+    flow.context = {"source": "user"}
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
+    result = await flow.async_step_user(
         {
             CONF_NAME: "Bedroom",
             CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_left",
             CONF_MEDIA_PLAYER: "media_player.bedroom_left",
             CONF_ADDITIONAL_ASSIST_SATELLITES: ["assist_satellite.bedroom_right"],
             CONF_ADDITIONAL_MEDIA_PLAYERS: ["media_player.bedroom_right"],
-        },
+        }
     )
 
     assert result["type"] == "create_entry"
@@ -71,18 +69,17 @@ async def test_config_flow_rejects_unpaired_additional_targets(
         hass.services.async_register(SCHEDULER_DOMAIN, service, _noop)
     _prepare_entities(hass)
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": "user"},
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
+    flow = SatelliteAlarmsConfigFlow()
+    flow.hass = hass
+    flow.context = {"source": "user"}
+
+    result = await flow.async_step_user(
         {
             CONF_NAME: "Bedroom",
             CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_left",
             CONF_MEDIA_PLAYER: "media_player.bedroom_left",
             CONF_ADDITIONAL_ASSIST_SATELLITES: ["assist_satellite.bedroom_right"],
-        },
+        }
     )
 
     assert result["type"] == "form"
