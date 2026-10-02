@@ -15,7 +15,7 @@ The initial use case is a house with multiple voice satellites—such as EchoMus
 
 The alarm should belong to that room and ring only on that room's configured speaker.
 
-> **Project status:** v0.5 development. Multiple named alarms, selected weekdays, room-local list/query/cancel voice commands, and deterministic same-room trigger queuing are implemented on top of the v0.4 voice/ringing stack.
+> **Project status:** v0.6 development. Skip-next, temporary next-occurrence overrides, per-alarm playback settings, pre/post/failure actions, and playback-failure hooks are implemented on top of the v0.5 multi-alarm stack.
 
 ## Goals
 
@@ -98,6 +98,8 @@ assist_satellite_alarms.enable
 assist_satellite_alarms.disable
 assist_satellite_alarms.fire
 assist_satellite_alarms.list
+assist_satellite_alarms.skip_next
+assist_satellite_alarms.override_next
 assist_satellite_alarms.stop
 assist_satellite_alarms.snooze
 ```
@@ -127,9 +129,33 @@ data:
   name: Work
 ```
 
-`assist_satellite_alarms.list` returns alarm IDs, names, recurrence, selected days, Scheduler entity IDs, enabled state, and next-trigger data.
+`assist_satellite_alarms.list` returns alarm IDs, names, recurrence, selected days, Scheduler entity IDs, enabled state, next-trigger data, skip-next state, temporary override metadata, and per-alarm playback overrides.
 
 `create` returns the stable alarm ID and Scheduler entity mapping when a response is requested. Scheduler Component owns the actual persistent schedule. The internal `fire` action now starts room-local alarm playback through the configured Assist satellite and media player.
+
+### Skip and temporary override
+
+Recurring alarms can skip exactly one normal Scheduler occurrence without changing the parent schedule:
+
+```yaml
+action: assist_satellite_alarms.skip_next
+data:
+  alarm_id: <alarm UUID>
+```
+
+A next occurrence can also be moved temporarily:
+
+```yaml
+action: assist_satellite_alarms.override_next
+data:
+  alarm_id: <alarm UUID>
+  date: "2099-09-30"
+  time: "07:00:00"
+```
+
+For recurring alarms, the integration creates a transient one-time Scheduler occurrence and marks the original next parent occurrence to be skipped. The recurring schedule itself remains unchanged. For one-time alarms, the existing parent schedule is edited directly.
+
+Voice examples include `Skip my next alarm`, `Skip tomorrow's alarm`, and `Tomorrow wake me at 7 instead`.
 
 ### Stop and snooze
 
@@ -159,6 +185,30 @@ data:
 ```
 
 Snooze creates a temporary one-time Scheduler Component occurrence tied to the parent alarm. It does not alter the parent recurring schedule or create another normal alarm record.
+
+### Per-alarm wake behavior
+
+Create/update actions can override endpoint defaults per alarm:
+
+- alarm media
+- alarm volume
+- snooze duration
+- pre-alarm service actions
+- post-stop/timeout service actions
+- failure service actions
+
+Simple service actions are stored as mappings such as:
+
+```yaml
+pre_actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.bedroom
+    data:
+      brightness_pct: 20
+```
+
+Playback failures emit `assist_satellite_alarms_alarm_failed`. Skip and override lifecycle events are also emitted for automations.
 
 ### Playback defaults
 
@@ -200,7 +250,7 @@ See [Project Plan](docs/PROJECT_PLAN.md) for the proposed architecture, restrict
 
 ## Voice control
 
-v0.5 extends the deterministic Home Assistant conversation sentence triggers added in v0.4. They are handled locally before the configured conversation agent, so the core alarm phrases do not require an LLM even when a ChatGPT, Gemini, or other conversation agent is selected.
+v0.6 extends the deterministic Home Assistant conversation sentence triggers added in v0.4. They are handled locally before the configured conversation agent, so the core alarm phrases do not require an LLM even when a ChatGPT, Gemini, or other conversation agent is selected.
 
 Supported English examples include:
 
@@ -221,6 +271,9 @@ Cancel my next alarm.
 Stop the alarm.
 Snooze.
 Snooze for 15 minutes.
+Skip my next alarm.
+Skip tomorrow's alarm.
+Tomorrow wake me at 7 instead.
 ```
 
 The originating `assist_satellite` is matched directly to the configured Satellite Alarms endpoint. If Home Assistant supplies only the originating device ID, the integration uses the configured satellite entity's device as a fallback. If neither path uniquely identifies an endpoint, the integration refuses to guess a room.
@@ -229,7 +282,7 @@ Common spoken clock forms such as `6 AM`, `6:30 PM`, `six thirty`, `six oh five`
 
 Bare `Stop` is intentionally not registered yet because a global sentence trigger would also intercept unrelated media stop commands when no alarm is ringing. Use `Stop the alarm` or `Dismiss the alarm` in v0.4.
 
-v0.5 supports multiple alarms per endpoint, exact-name lookup, time-based lookup with ambiguity protection, and selected weekdays. Later versions may add skip-next, temporary overrides, pre/post alarm actions, morning briefings, fallback speakers, and richer dashboard controls.
+v0.6 adds skip-next, temporary next-occurrence overrides, per-alarm media/volume/snooze settings, simple pre/post/failure service actions, and an alarm-failure event. Later versions may add morning briefings, richer fallback targeting, dashboard entities, and UI controls.
 
 ## Design principles
 
@@ -313,7 +366,7 @@ The internal file layout may change as the implementation develops.
 
 There is not yet a tagged public release. For development testing, install and configure Scheduler Component first, then install this repository as a HACS custom integration and add each satellite endpoint through Home Assistant's normal integration config flow.
 
-On the v0.5 development branch, scheduled alarms can also be named, listed, queried/canceled by name or time, and scheduled on explicit weekdays such as Monday/Wednesday/Friday.
+On the v0.6 development branch, alarms can also skip one occurrence, temporarily move the next occurrence, use per-alarm playback overrides, and invoke simple Home Assistant service actions around alarm playback.
 
 ## Contributing
 

@@ -16,9 +16,17 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_MEDIA_PLAYER,
     CONF_NAME,
     DOMAIN,
+    META_ALARM_MEDIA,
+    META_ALARM_VOLUME,
     META_DATE,
     META_DAYS,
+    META_FAILURE_ACTIONS,
+    META_OVERRIDE,
+    META_POST_ACTIONS,
+    META_PRE_ACTIONS,
     META_RECURRENCE,
+    META_SKIP_NEXT,
+    META_SNOOZE_MINUTES,
     META_TIME,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
@@ -85,6 +93,8 @@ async def test_create_alarm(hass: HomeAssistant) -> None:
         META_RECURRENCE: RECURRENCE_ONCE,
         META_DATE: "2099-09-30",
         META_DAYS: None,
+        META_SKIP_NEXT: False,
+        META_OVERRIDE: None,
     }
     assert calls[0][0] == "add"
     assert calls[0][1]["start_date"] == "2099-09-30"
@@ -410,3 +420,146 @@ async def test_list_responses_include_enabled_days_and_next_trigger(
     assert response[0]["days"] == ["mon", "wed", "fri"]
     assert response[0]["enabled"] is True
     assert response[0]["next_trigger"] == "2099-09-30T06:30:00-04:00"
+
+
+async def test_playback_overrides_persist_in_alarm_metadata(hass: HomeAssistant) -> None:
+    """Per-alarm wake options should stay in Satellite Alarms metadata."""
+    entry = _add_endpoint(hass)
+    manager, _calls = await _manager(hass)
+
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="Work",
+        alarm_media="media-source://media_source/local/work.mp3",
+        alarm_volume=0.55,
+        snooze_minutes=12,
+        pre_actions=[{"action": "light.turn_on", "target": {"entity_id": "light.bedroom"}}],
+        post_actions=[{"action": "light.turn_off", "target": {"entity_id": "light.bedroom"}}],
+        failure_actions=[{"action": "notify.notify", "data": {"message": "Alarm failed"}}],
+    )
+
+    assert record.metadata[META_ALARM_MEDIA].endswith("work.mp3")
+    assert record.metadata[META_ALARM_VOLUME] == 0.55
+    assert record.metadata[META_SNOOZE_MINUTES] == 12
+    assert record.metadata[META_PRE_ACTIONS][0]["action"] == "light.turn_on"
+    assert record.metadata[META_POST_ACTIONS][0]["action"] == "light.turn_off"
+    assert record.metadata[META_FAILURE_ACTIONS][0]["action"] == "notify.notify"
+
+
+async def test_skip_next_is_consumed_once(hass: HomeAssistant) -> None:
+    """Recurring skip-next should suppress exactly one parent occurrence."""
+    entry = _add_endpoint(hass)
+    manager, _calls = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="Work",
+    )
+
+    await manager.async_set_skip_next(record.alarm_id)
+    assert manager.registry.get(record.alarm_id).metadata[META_SKIP_NEXT] is True
+
+    assert await manager.async_consume_skip_next(record.alarm_id) is True
+    assert manager.registry.get(record.alarm_id).metadata[META_SKIP_NEXT] is False
+    assert await manager.async_consume_skip_next(record.alarm_id) is False
+
+
+async def test_skip_one_time_alarm_removes_metadata_after_occurrence(
+    hass: HomeAssistant,
+) -> None:
+    """A skipped one-time alarm should disappear when its scheduled callback arrives."""
+    entry = _add_endpoint(hass)
+    manager, _calls = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_ONCE,
+        date_value="2099-09-30",
+    )
+
+    await manager.async_set_skip_next(record.alarm_id)
+    assert await manager.async_consume_skip_next(record.alarm_id) is True
+    assert manager.registry.get(record.alarm_id) is None
+
+
+async def test_override_recurring_alarm_creates_transient_occurrence(
+    hass: HomeAssistant,
+) -> None:
+    """Recurring override should preserve parent schedule and skip its next occurrence."""
+    entry = _add_endpoint(hass)
+    manager, calls = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_DAILY,
+        name="Work",
+    )
+
+    parent_entity = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        parent_entity,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2099-09-30T06:30:00-04:00",
+        },
+    )
+    calls.clear()
+
+    updated, override_entity, occurrence_id = await manager.async_override_next(
+        record.alarm_id,
+        time_value="07:00:00",
+        date_value="2099-09-30",
+    )
+
+    assert override_entity is not None
+    assert occurrence_id is not None
+    assert updated.metadata[META_SKIP_NEXT] is True
+    assert updated.metadata[META_OVERRIDE]["time"] == "07:00:00"
+    assert updated.metadata[META_OVERRIDE]["date"] == "2099-09-30"
+    assert calls[0][0] == "add"
+    assert "Override" in calls[0][1]["name"]
+    assert calls[0][1]["timeslots"][0]["start"] == "07:00:00"
+
+    await manager.async_clear_override(record.alarm_id, occurrence_id)
+    assert manager.registry.get(record.alarm_id).metadata[META_OVERRIDE] is None
+    assert manager.registry.get(record.alarm_id).metadata[META_SKIP_NEXT] is True
+
+
+async def test_override_one_time_alarm_edits_parent_schedule(hass: HomeAssistant) -> None:
+    """One-time overrides should edit the existing schedule instead of creating a child."""
+    entry = _add_endpoint(hass)
+    manager, calls = await _manager(hass)
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="06:30:00",
+        recurrence=RECURRENCE_ONCE,
+        date_value="2099-09-30",
+        name="Appointment",
+    )
+
+    entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, manager.scheduler.alarm_tag(record.alarm_id)],
+            "next_trigger": "2099-09-30T06:30:00-04:00",
+        },
+    )
+    calls.clear()
+
+    updated, override_entity, occurrence_id = await manager.async_override_next(
+        record.alarm_id,
+        time_value="07:00:00",
+        date_value="2099-09-30",
+    )
+
+    assert override_entity is None
+    assert occurrence_id is None
+    assert updated.metadata[META_TIME] == "07:00:00"
+    assert calls[0][0] == "edit"
+    assert calls[0][1]["timeslots"][0]["start"] == "07:00:00"

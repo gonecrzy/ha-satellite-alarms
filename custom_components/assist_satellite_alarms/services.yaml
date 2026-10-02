@@ -59,6 +59,44 @@ create:
       name: Name
       selector:
         text:
+    alarm_media:
+      name: Alarm media
+      description: Optional per-alarm media URL or media-source ID. Leave empty to use the endpoint default.
+      selector:
+        text:
+    alarm_volume:
+      name: Alarm volume
+      description: Optional per-alarm volume override from 0.0 to 1.0.
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+          mode: slider
+    snooze_minutes:
+      name: Snooze minutes
+      description: Optional per-alarm default snooze duration.
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          mode: box
+    pre_actions:
+      name: Pre-alarm actions
+      description: Optional list of simple Home Assistant service actions to run before ringing.
+      selector:
+        object:
+    post_actions:
+      name: Post-alarm actions
+      description: Optional list of simple Home Assistant service actions to run after stop or timeout.
+      selector:
+        object:
+    failure_actions:
+      name: Failure actions
+      description: Optional list of simple Home Assistant service actions to run if alarm playback cannot start.
+      selector:
+        object:
 
 update:
   name: Update alarm
@@ -117,6 +155,44 @@ update:
       name: Name
       selector:
         text:
+    alarm_media:
+      name: Alarm media
+      description: Optional per-alarm media URL or media-source ID. Leave empty to use the endpoint default.
+      selector:
+        text:
+    alarm_volume:
+      name: Alarm volume
+      description: Optional per-alarm volume override from 0.0 to 1.0.
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+          mode: slider
+    snooze_minutes:
+      name: Snooze minutes
+      description: Optional per-alarm default snooze duration.
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          mode: box
+    pre_actions:
+      name: Pre-alarm actions
+      description: Optional list of simple Home Assistant service actions to run before ringing.
+      selector:
+        object:
+    post_actions:
+      name: Post-alarm actions
+      description: Optional list of simple Home Assistant service actions to run after stop or timeout.
+      selector:
+        object:
+    failure_actions:
+      name: Failure actions
+      description: Optional list of simple Home Assistant service actions to run if alarm playback cannot start.
+      selector:
+        object:
 
 list:
   name: List alarms
@@ -159,6 +235,36 @@ disable:
       selector:
         text:
 
+skip_next:
+  name: Skip next occurrence
+  description: Skip the next normal occurrence without changing the recurring schedule.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      required: true
+      selector:
+        text:
+
+override_next:
+  name: Override next occurrence
+  description: Temporarily move the next occurrence to another date/time while preserving recurrence.
+  fields:
+    alarm_id:
+      name: Alarm ID
+      required: true
+      selector:
+        text:
+    time:
+      name: Time
+      required: true
+      selector:
+        time:
+    date:
+      name: Date
+      description: Optional target date. If omitted, the current next-occurrence date is used.
+      selector:
+        date:
+
 fire:
   name: Trigger alarm
   description: Internal action used by Scheduler Component when an alarm becomes due.
@@ -166,6 +272,20 @@ fire:
     alarm_id:
       name: Alarm ID
       required: true
+      selector:
+        text:
+    occurrence:
+      name: Occurrence type
+      description: Internal occurrence type used for parent, snooze, and override callbacks.
+      selector:
+        select:
+          options:
+            - scheduled
+            - snooze
+            - override
+    occurrence_id:
+      name: Occurrence ID
+      description: Internal transient occurrence identifier.
       selector:
         text:
 

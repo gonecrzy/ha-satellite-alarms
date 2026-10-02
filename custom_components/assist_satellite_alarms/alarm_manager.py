@@ -13,9 +13,17 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
+    META_ALARM_MEDIA,
+    META_ALARM_VOLUME,
     META_DATE,
     META_DAYS,
+    META_FAILURE_ACTIONS,
+    META_OVERRIDE,
+    META_POST_ACTIONS,
+    META_PRE_ACTIONS,
     META_RECURRENCE,
+    META_SKIP_NEXT,
+    META_SNOOZE_MINUTES,
     META_TIME,
     RECURRENCE_ONCE,
     RECURRENCE_SELECTED_DAYS,
@@ -121,6 +129,56 @@ class AlarmManager:
             raise ValueError("Selected-day alarms contain an invalid weekday")
         return normalized
 
+    @staticmethod
+    def _normalize_playback_metadata(
+        *,
+        alarm_media: str | None = None,
+        alarm_volume: float | None = None,
+        snooze_minutes: int | None = None,
+        pre_actions: list[dict] | None = None,
+        post_actions: list[dict] | None = None,
+        failure_actions: list[dict] | None = None,
+    ) -> dict[str, object]:
+        """Normalize optional per-alarm playback/action overrides."""
+        metadata: dict[str, object] = {}
+        if alarm_media is not None:
+            metadata[META_ALARM_MEDIA] = alarm_media.strip() or None
+        if alarm_volume is not None:
+            volume = float(alarm_volume)
+            if not 0.0 <= volume <= 1.0:
+                raise ValueError("Alarm volume must be between 0.0 and 1.0")
+            metadata[META_ALARM_VOLUME] = volume
+        if snooze_minutes is not None:
+            minutes = int(snooze_minutes)
+            if not 1 <= minutes <= 120:
+                raise ValueError("Snooze duration must be between 1 and 120 minutes")
+            metadata[META_SNOOZE_MINUTES] = minutes
+        if pre_actions is not None:
+            metadata[META_PRE_ACTIONS] = pre_actions
+        if post_actions is not None:
+            metadata[META_POST_ACTIONS] = post_actions
+        if failure_actions is not None:
+            metadata[META_FAILURE_ACTIONS] = failure_actions
+        return metadata
+
+    async def _async_remove_override_schedule(self, record: AlarmRecord) -> None:
+        """Best-effort remove a transient override schedule attached to an alarm."""
+        override = record.metadata.get(META_OVERRIDE)
+        if not isinstance(override, dict):
+            return
+        entity_id = override.get("scheduler_entity_id")
+        if not entity_id:
+            return
+        try:
+            await self.scheduler.async_remove_schedule(str(entity_id))
+        except Exception:
+            _LOGGER.debug(
+                "Override schedule %s for alarm %s was already unavailable",
+                entity_id,
+                record.alarm_id,
+                exc_info=True,
+            )
+
     async def async_create(
         self,
         *,
@@ -130,6 +188,12 @@ class AlarmManager:
         date_value: str | None = None,
         days: list[str] | tuple[str, ...] | None = None,
         name: str | None = None,
+        alarm_media: str | None = None,
+        alarm_volume: float | None = None,
+        snooze_minutes: int | None = None,
+        pre_actions: list[dict] | None = None,
+        post_actions: list[dict] | None = None,
+        failure_actions: list[dict] | None = None,
     ) -> AlarmRecord:
         """Create an alarm and its Scheduler Component schedule."""
         endpoint = self._endpoint(endpoint_id)
@@ -140,6 +204,14 @@ class AlarmManager:
             date_value=date_value,
         )
         target_days = self._normalize_days(recurrence, days)
+        playback_metadata = self._normalize_playback_metadata(
+            alarm_media=alarm_media,
+            alarm_volume=alarm_volume,
+            snooze_minutes=snooze_minutes,
+            pre_actions=pre_actions,
+            post_actions=post_actions,
+            failure_actions=failure_actions,
+        )
         entity_id = self.scheduler.expected_entity_id(alarm_id)
         record = AlarmRecord(
             alarm_id=alarm_id,
@@ -151,6 +223,9 @@ class AlarmManager:
                 META_RECURRENCE: recurrence,
                 META_DATE: target_date,
                 META_DAYS: target_days,
+                META_SKIP_NEXT: False,
+                META_OVERRIDE: None,
+                **playback_metadata,
             },
         )
 
@@ -179,8 +254,23 @@ class AlarmManager:
         date_value: str | None = None,
         days: list[str] | tuple[str, ...] | None = None,
         name: str | None = None,
+        alarm_media: str | None = None,
+        alarm_volume: float | None = None,
+        snooze_minutes: int | None = None,
+        pre_actions: list[dict] | None = None,
+        post_actions: list[dict] | None = None,
+        failure_actions: list[dict] | None = None,
     ) -> AlarmRecord:
         """Update alarm metadata and, when needed, its Scheduler schedule."""
+        playback_metadata = self._normalize_playback_metadata(
+            alarm_media=alarm_media,
+            alarm_volume=alarm_volume,
+            snooze_minutes=snooze_minutes,
+            pre_actions=pre_actions,
+            post_actions=post_actions,
+            failure_actions=failure_actions,
+        )
+
         async with self._lock:
             record = self._record(alarm_id)
             self._endpoint(record.endpoint_entry_id)
@@ -217,6 +307,7 @@ class AlarmManager:
                 new_days = self._normalize_days(new_recurrence, days)
 
             if schedule_changed:
+                await self._async_remove_override_schedule(record)
                 entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
                 if entity_id is None:
                     raise AlarmNotFoundError(
@@ -235,6 +326,8 @@ class AlarmManager:
                 record.metadata[META_RECURRENCE] = new_recurrence
                 record.metadata[META_DATE] = new_date
                 record.metadata[META_DAYS] = new_days
+                record.metadata[META_SKIP_NEXT] = False
+                record.metadata[META_OVERRIDE] = None
 
             if name is not None:
                 normalized_name = name.strip()
@@ -242,6 +335,7 @@ class AlarmManager:
                     raise ValueError("Alarm name cannot be empty")
                 record.name = normalized_name
 
+            record.metadata.update(playback_metadata)
             await self.registry.async_upsert(record)
             return record
 
@@ -249,6 +343,8 @@ class AlarmManager:
         """Delete an alarm and its Scheduler Component schedule."""
         async with self._lock:
             record = self._record(alarm_id)
+            await self._async_remove_override_schedule(record)
+
             entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
             if entity_id is None:
                 raise AlarmNotFoundError(
@@ -268,8 +364,101 @@ class AlarmManager:
                 )
             await self.scheduler.async_set_enabled(entity_id, enabled)
             record.scheduler_entity_id = entity_id
+            if not enabled:
+                await self._async_remove_override_schedule(record)
+                record.metadata[META_OVERRIDE] = None
+                record.metadata[META_SKIP_NEXT] = False
             await self.registry.async_upsert(record)
             return record
+
+    async def async_set_skip_next(self, alarm_id: str, skipped: bool = True) -> AlarmRecord:
+        """Mark or clear the next normal Scheduler occurrence for skipping."""
+        async with self._lock:
+            record = self._record(alarm_id)
+            record.metadata[META_SKIP_NEXT] = bool(skipped)
+            await self.registry.async_upsert(record)
+            return record
+
+    async def async_consume_skip_next(self, alarm_id: str) -> bool:
+        """Consume and clear a pending skip marker when the parent schedule fires."""
+        async with self._lock:
+            record = self._record(alarm_id)
+            if not record.metadata.get(META_SKIP_NEXT):
+                return False
+
+            if record.metadata.get(META_RECURRENCE) == RECURRENCE_ONCE:
+                await self.registry.async_remove(alarm_id)
+            else:
+                record.metadata[META_SKIP_NEXT] = False
+                await self.registry.async_upsert(record)
+            return True
+
+    async def async_override_next(
+        self,
+        alarm_id: str,
+        *,
+        time_value: str,
+        date_value: str | None = None,
+    ) -> tuple[AlarmRecord, str | None, str | None]:
+        """Temporarily move the next occurrence without changing recurrence."""
+        record = self._record(alarm_id)
+        trigger = self.trigger_for_record(record)
+        if trigger is None:
+            raise ValueError("Alarm has no enabled next occurrence to override")
+
+        parsed_time = dt_util.parse_time(time_value)
+        if parsed_time is None:
+            raise ValueError("Invalid override time")
+
+        target_date = date_value or dt_util.as_local(trigger).date().isoformat()
+        parsed_date = dt_util.parse_date(target_date)
+        if parsed_date is None:
+            raise ValueError("Invalid override date")
+
+        now = dt_util.now()
+        target = datetime.combine(parsed_date, parsed_time, tzinfo=now.tzinfo)
+        if target <= now:
+            raise ValueError("Override occurrence must be scheduled in the future")
+
+        if record.metadata.get(META_RECURRENCE) == RECURRENCE_ONCE:
+            updated = await self.async_update(
+                alarm_id=alarm_id,
+                time_value=time_value,
+                date_value=target_date,
+            )
+            return updated, None, None
+
+        await self._async_remove_override_schedule(record)
+
+        override_entity, occurrence_id = await self.scheduler.async_create_override_schedule(
+            alarm_id=alarm_id,
+            time=time_value,
+            date=target_date,
+        )
+
+        async with self._lock:
+            record = self._record(alarm_id)
+            record.metadata[META_SKIP_NEXT] = True
+            record.metadata[META_OVERRIDE] = {
+                "scheduler_entity_id": override_entity,
+                "occurrence_id": occurrence_id,
+                "time": time_value,
+                "date": target_date,
+            }
+            await self.registry.async_upsert(record)
+            return record, override_entity, occurrence_id
+
+    async def async_clear_override(self, alarm_id: str, occurrence_id: str | None) -> None:
+        """Clear override metadata when its transient occurrence fires."""
+        async with self._lock:
+            record = self._record(alarm_id)
+            override = record.metadata.get(META_OVERRIDE)
+            if not isinstance(override, dict):
+                return
+            if occurrence_id and override.get("occurrence_id") != occurrence_id:
+                return
+            record.metadata[META_OVERRIDE] = None
+            await self.registry.async_upsert(record)
 
     async def async_reconcile(self) -> tuple[int, int]:
         """Reconcile cached Scheduler entity IDs using stable alarm tags."""
@@ -379,6 +568,11 @@ class AlarmManager:
             "days": record.metadata.get(META_DAYS),
             "enabled": state.state == STATE_ON if state else None,
             "next_trigger": self.scheduler.next_trigger(entity_id) if entity_id else None,
+            "skip_next": bool(record.metadata.get(META_SKIP_NEXT)),
+            "override": record.metadata.get(META_OVERRIDE),
+            "alarm_media": record.metadata.get(META_ALARM_MEDIA),
+            "alarm_volume": record.metadata.get(META_ALARM_VOLUME),
+            "snooze_minutes": record.metadata.get(META_SNOOZE_MINUTES),
         }
 
     def list_responses(self, endpoint_id: str | None = None) -> list[dict[str, object]]:

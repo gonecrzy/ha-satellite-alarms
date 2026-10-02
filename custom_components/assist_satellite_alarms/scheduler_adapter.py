@@ -13,7 +13,11 @@ from homeassistant.util import slugify
 
 from .const import (
     ATTR_ALARM_ID,
+    ATTR_OCCURRENCE,
+    ATTR_OCCURRENCE_ID,
     DOMAIN,
+    OCCURRENCE_OVERRIDE,
+    OCCURRENCE_SNOOZE,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
     RECURRENCE_SELECTED_DAYS,
@@ -158,7 +162,11 @@ class SchedulerAdapter:
                     "actions": [
                         {
                             "service": f"{DOMAIN}.fire",
-                            "service_data": {ATTR_ALARM_ID: alarm_id},
+                            "service_data": {
+                                ATTR_ALARM_ID: alarm_id,
+                                ATTR_OCCURRENCE: OCCURRENCE_SNOOZE,
+                                ATTR_OCCURRENCE_ID: occurrence_id,
+                            },
                         }
                     ],
                 }
@@ -167,6 +175,44 @@ class SchedulerAdapter:
             "tags": [
                 DOMAIN,
                 f"{DOMAIN}:snooze:{occurrence_id}",
+                f"{DOMAIN}:parent:{alarm_id}",
+            ],
+        }
+
+    @classmethod
+    def build_override_payload(
+        cls,
+        *,
+        alarm_id: str,
+        occurrence_id: str,
+        time: str,
+        date: str,
+    ) -> dict[str, Any]:
+        """Build a transient one-time schedule for an overridden occurrence."""
+        return {
+            "name": f"Assist Satellite Alarm Override {occurrence_id}",
+            "weekdays": [_SCHEDULER_DAILY],
+            "start_date": date,
+            "end_date": date,
+            "timeslots": [
+                {
+                    "start": time,
+                    "actions": [
+                        {
+                            "service": f"{DOMAIN}.fire",
+                            "service_data": {
+                                ATTR_ALARM_ID: alarm_id,
+                                ATTR_OCCURRENCE: OCCURRENCE_OVERRIDE,
+                                ATTR_OCCURRENCE_ID: occurrence_id,
+                            },
+                        }
+                    ],
+                }
+            ],
+            "repeat_type": _SINGLE,
+            "tags": [
+                DOMAIN,
+                f"{DOMAIN}:override:{occurrence_id}",
                 f"{DOMAIN}:parent:{alarm_id}",
             ],
         }
@@ -214,6 +260,30 @@ class SchedulerAdapter:
             blocking=True,
         )
         return f"switch.schedule_{slugify(payload['name'])}"
+
+    async def async_create_override_schedule(
+        self,
+        *,
+        alarm_id: str,
+        time: str,
+        date: str,
+    ) -> tuple[str, str]:
+        """Create a transient Scheduler schedule for one overridden occurrence."""
+        self.ensure_ready()
+        occurrence_id = uuid4().hex
+        payload = self.build_override_payload(
+            alarm_id=alarm_id,
+            occurrence_id=occurrence_id,
+            time=time,
+            date=date,
+        )
+        await self.hass.services.async_call(
+            SCHEDULER_DOMAIN,
+            SERVICE_ADD,
+            payload,
+            blocking=True,
+        )
+        return f"switch.schedule_{slugify(payload['name'])}", occurrence_id
 
     async def async_update_schedule(
         self,

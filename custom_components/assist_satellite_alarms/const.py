@@ -51,6 +51,8 @@ SERVICE_FIRE: Final = "fire"
 SERVICE_STOP: Final = "stop"
 SERVICE_SNOOZE: Final = "snooze"
 SERVICE_LIST: Final = "list"
+SERVICE_SKIP_NEXT: Final = "skip_next"
+SERVICE_OVERRIDE_NEXT: Final = "override_next"
 
 ATTR_ALARM_ID: Final = "alarm_id"
 ATTR_ENDPOINT_ID: Final = "endpoint_id"
@@ -59,6 +61,14 @@ ATTR_DATE: Final = "date"
 ATTR_RECURRENCE: Final = "recurrence"
 ATTR_MINUTES: Final = "minutes"
 ATTR_DAYS: Final = "days"
+ATTR_OCCURRENCE: Final = "occurrence"
+ATTR_OCCURRENCE_ID: Final = "occurrence_id"
+ATTR_ALARM_MEDIA: Final = "alarm_media"
+ATTR_ALARM_VOLUME: Final = "alarm_volume"
+ATTR_SNOOZE_MINUTES: Final = "snooze_minutes"
+ATTR_PRE_ACTIONS: Final = "pre_actions"
+ATTR_POST_ACTIONS: Final = "post_actions"
+ATTR_FAILURE_ACTIONS: Final = "failure_actions"
 
 RECURRENCE_ONCE: Final = "once"
 RECURRENCE_DAILY: Final = "daily"
@@ -94,10 +104,30 @@ META_TIME: Final = "time"
 META_DATE: Final = "date"
 META_RECURRENCE: Final = "recurrence"
 META_DAYS: Final = "days"
+META_SKIP_NEXT: Final = "skip_next"
+META_OVERRIDE: Final = "override"
+META_ALARM_MEDIA: Final = "alarm_media"
+META_ALARM_VOLUME: Final = "alarm_volume"
+META_SNOOZE_MINUTES: Final = "snooze_minutes"
+META_PRE_ACTIONS: Final = "pre_actions"
+META_POST_ACTIONS: Final = "post_actions"
+META_FAILURE_ACTIONS: Final = "failure_actions"
 
 EVENT_ALARM_TRIGGERED: Final = f"{DOMAIN}_alarm_triggered"
 EVENT_ALARM_STOPPED: Final = f"{DOMAIN}_alarm_stopped"
 EVENT_ALARM_SNOOZED: Final = f"{DOMAIN}_alarm_snoozed"
+EVENT_ALARM_SKIPPED: Final = f"{DOMAIN}_alarm_skipped"
+EVENT_ALARM_FAILED: Final = f"{DOMAIN}_alarm_failed"
+EVENT_ALARM_OVERRIDE_CREATED: Final = f"{DOMAIN}_alarm_override_created"
+
+OCCURRENCE_SCHEDULED: Final = "scheduled"
+OCCURRENCE_SNOOZE: Final = "snooze"
+OCCURRENCE_OVERRIDE: Final = "override"
+OCCURRENCES: Final = (
+    OCCURRENCE_SCHEDULED,
+    OCCURRENCE_SNOOZE,
+    OCCURRENCE_OVERRIDE,
+)
 
 ALARM_REPLAY_INTERVAL_SECONDS: Final = 8
 VOLUME_RAMP_STEP_SECONDS: Final = 5

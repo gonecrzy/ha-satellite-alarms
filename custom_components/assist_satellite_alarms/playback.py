@@ -34,7 +34,14 @@ from .const import (
     DEFAULT_VOLUME_RAMP_SECONDS,
     DEFAULT_VOLUME_RAMP_START,
     DOMAIN,
+    EVENT_ALARM_FAILED,
+    META_ALARM_MEDIA,
+    META_ALARM_VOLUME,
+    META_FAILURE_ACTIONS,
+    META_POST_ACTIONS,
+    META_PRE_ACTIONS,
     META_RECURRENCE,
+    META_SNOOZE_MINUTES,
     RECURRENCE_ONCE,
     VOLUME_RAMP_STEP_SECONDS,
 )
@@ -165,10 +172,15 @@ class PlaybackManager:
         except HomeAssistantError:
             _LOGGER.debug("Media stop failed for %s", entity_id, exc_info=True)
 
-    async def _async_announce(self, active: ActiveAlarm, entry: ConfigEntry) -> None:
+    async def _async_announce(
+        self, active: ActiveAlarm, entry: ConfigEntry, record: AlarmRecord
+    ) -> None:
         """Play one alarm announcement on the Assist satellite."""
+        configured_media = record.metadata.get(META_ALARM_MEDIA)
         media_id = str(
-            self._option(entry, CONF_DEFAULT_ALARM_MEDIA, DEFAULT_ALARM_MEDIA) or ""
+            configured_media
+            if configured_media is not None
+            else self._option(entry, CONF_DEFAULT_ALARM_MEDIA, DEFAULT_ALARM_MEDIA) or ""
         ).strip()
         message = str(
             self._option(entry, CONF_DEFAULT_ALARM_MESSAGE, DEFAULT_ALARM_MESSAGE)
@@ -189,6 +201,58 @@ class PlaybackManager:
             ASSIST_SATELLITE_ANNOUNCE,
             service_data,
             blocking=True,
+        )
+
+    async def _async_run_actions(
+        self,
+        record: AlarmRecord,
+        metadata_key: str,
+        *,
+        reason: str,
+    ) -> None:
+        """Run simple persisted Home Assistant service actions sequentially."""
+        actions = record.metadata.get(metadata_key) or []
+        if not isinstance(actions, list):
+            return
+
+        for item in actions:
+            if not isinstance(item, dict):
+                continue
+            action = str(item.get("action") or item.get("service") or "")
+            if "." not in action:
+                continue
+            domain, service = action.split(".", 1)
+            data = item.get("data")
+            target = item.get("target")
+            try:
+                await self.hass.services.async_call(
+                    domain,
+                    service,
+                    dict(data) if isinstance(data, dict) else {},
+                    blocking=True,
+                    target=dict(target) if isinstance(target, dict) else None,
+                )
+            except HomeAssistantError:
+                _LOGGER.warning(
+                    "Alarm %s %s action %s failed",
+                    record.alarm_id,
+                    reason,
+                    action,
+                    exc_info=True,
+                )
+
+    async def async_handle_failure(self, alarm_id: str, reason: str) -> None:
+        """Run failure hooks and emit an alarm failure event."""
+        record = self._record(alarm_id)
+        await self._async_run_actions(record, META_FAILURE_ACTIONS, reason="failure")
+        self.hass.bus.async_fire(
+            EVENT_ALARM_FAILED,
+            {
+                "alarm_id": record.alarm_id,
+                "endpoint_id": record.endpoint_entry_id,
+                "name": record.name,
+                "reason": reason,
+            },
         )
 
     async def _async_ramp_volume(
@@ -219,7 +283,8 @@ class PlaybackManager:
             await self._async_set_volume(active.media_player_entity_id, level)
 
     async def _async_finalize(self, active: ActiveAlarm) -> None:
-        """Restore volume and clear runtime state."""
+        """Restore volume, run final actions, and clear runtime state."""
+        record = self.registry.get(active.alarm_id)
         if active.ramp_task and not active.ramp_task.done():
             active.ramp_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -252,9 +317,9 @@ class PlaybackManager:
                 if not queue:
                     self._queued_by_endpoint.pop(active.endpoint_entry_id, None)
 
-        if active.finish_reason in {"stop", "timeout"}:
-            record = self.registry.get(active.alarm_id)
-            if record and record.metadata.get(META_RECURRENCE) == RECURRENCE_ONCE:
+        if record and active.finish_reason in {"stop", "timeout"}:
+            await self._async_run_actions(record, META_POST_ACTIONS, reason="post")
+            if record.metadata.get(META_RECURRENCE) == RECURRENCE_ONCE:
                 await self.registry.async_remove(active.alarm_id)
 
         if next_alarm_id is not None:
@@ -263,9 +328,16 @@ class PlaybackManager:
                 f"{DOMAIN} queued alarm {next_alarm_id}",
             )
 
-    async def _async_run(self, active: ActiveAlarm, entry: ConfigEntry) -> None:
+    async def _async_run(
+        self, active: ActiveAlarm, entry: ConfigEntry, record: AlarmRecord
+    ) -> None:
         """Run the repeating alarm loop until stopped or timed out."""
-        target_volume = float(self._option(entry, CONF_DEFAULT_VOLUME, DEFAULT_VOLUME))
+        configured_volume = record.metadata.get(META_ALARM_VOLUME)
+        target_volume = float(
+            configured_volume
+            if configured_volume is not None
+            else self._option(entry, CONF_DEFAULT_VOLUME, DEFAULT_VOLUME)
+        )
         ramp_enabled = bool(
             self._option(
                 entry,
@@ -287,6 +359,7 @@ class PlaybackManager:
         deadline = asyncio.get_running_loop().time() + (max_ring_minutes * 60)
 
         try:
+            await self._async_run_actions(record, META_PRE_ACTIONS, reason="pre")
             if ramp_enabled:
                 start_volume = min(ramp_start, target_volume)
                 await self._async_set_volume(active.media_player_entity_id, start_volume)
@@ -310,7 +383,7 @@ class PlaybackManager:
 
                 try:
                     async with asyncio.timeout(remaining):
-                        await self._async_announce(active, entry)
+                        await self._async_announce(active, entry, record)
                 except TimeoutError:
                     active.finish_reason = "timeout"
                     break
@@ -328,9 +401,10 @@ class PlaybackManager:
                 await asyncio.sleep(min(ALARM_REPLAY_INTERVAL_SECONDS, remaining))
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as err:
             active.finish_reason = "error"
             _LOGGER.exception("Alarm playback failed for %s", active.alarm_id)
+            await self.async_handle_failure(active.alarm_id, str(err))
         finally:
             await self._async_stop_media(active.media_player_entity_id)
             await self._async_finalize(active)
@@ -377,7 +451,7 @@ class PlaybackManager:
             )
             self._active_by_endpoint[record.endpoint_entry_id] = active
             active.task = self.hass.async_create_task(
-                self._async_run(active, entry),
+                self._async_run(active, entry, record),
                 f"{DOMAIN} alarm {alarm_id}",
             )
             return active
@@ -404,8 +478,10 @@ class PlaybackManager:
             return
         try:
             await self.async_start_or_queue(alarm_id)
-        except PlaybackError:
+        except PlaybackError as err:
             _LOGGER.exception("Could not start queued alarm %s", alarm_id)
+            if self.registry.get(alarm_id) is not None:
+                await self.async_handle_failure(alarm_id, str(err))
 
     def _resolve_active(
         self,
@@ -459,13 +535,19 @@ class PlaybackManager:
         active = self._resolve_active(alarm_id=alarm_id, endpoint_id=endpoint_id)
         entry = self._entry(active.endpoint_entry_id)
 
+        record = self._record(active.alarm_id)
+        configured_snooze = record.metadata.get(META_SNOOZE_MINUTES)
         snooze_minutes = int(
             minutes
             if minutes is not None
-            else self._option(
-                entry,
-                CONF_DEFAULT_SNOOZE_MINUTES,
-                DEFAULT_SNOOZE_MINUTES,
+            else (
+                configured_snooze
+                if configured_snooze is not None
+                else self._option(
+                    entry,
+                    CONF_DEFAULT_SNOOZE_MINUTES,
+                    DEFAULT_SNOOZE_MINUTES,
+                )
             )
         )
         if snooze_minutes < 1:
