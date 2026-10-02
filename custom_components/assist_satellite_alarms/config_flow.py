@@ -11,6 +11,9 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_ADDITIONAL_ASSIST_SATELLITES,
+    CONF_ADDITIONAL_MEDIA_PLAYERS,
+    CONF_ADDITIONAL_PLAYBACK_TARGETS,
     CONF_AREA_ID,
     CONF_ASSIST_SATELLITE,
     CONF_DEFAULT_ALARM_MEDIA,
@@ -20,18 +23,23 @@ from .const import (
     CONF_MAX_RING_MINUTES,
     CONF_MEDIA_PLAYER,
     CONF_NAME,
+    CONF_PLAYBACK_MODE,
     CONF_VOLUME_RAMP_ENABLED,
     CONF_VOLUME_RAMP_SECONDS,
     CONF_VOLUME_RAMP_START,
     DEFAULT_ALARM_MEDIA,
     DEFAULT_ALARM_MESSAGE,
     DEFAULT_MAX_RING_MINUTES,
+    DEFAULT_PLAYBACK_MODE,
     DEFAULT_SNOOZE_MINUTES,
     DEFAULT_VOLUME,
     DEFAULT_VOLUME_RAMP_ENABLED,
     DEFAULT_VOLUME_RAMP_SECONDS,
     DEFAULT_VOLUME_RAMP_START,
     DOMAIN,
+    PLAYBACK_MODE_ALL,
+    PLAYBACK_MODE_FALLBACK,
+    PLAYBACK_MODE_PRIMARY,
 )
 from .scheduler_adapter import SchedulerAdapter
 
@@ -48,12 +56,27 @@ def _config_schema() -> vol.Schema:
             vol.Required(CONF_MEDIA_PLAYER): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="media_player")
             ),
+            vol.Optional(CONF_ADDITIONAL_ASSIST_SATELLITES): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="assist_satellite", multiple=True)
+            ),
+            vol.Optional(CONF_ADDITIONAL_MEDIA_PLAYERS): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="media_player", multiple=True)
+            ),
         }
     )
 
 
 OPTIONS_SCHEMA = vol.Schema(
     {
+        vol.Optional(CONF_PLAYBACK_MODE, default=DEFAULT_PLAYBACK_MODE): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {"label": "Primary only", "value": PLAYBACK_MODE_PRIMARY},
+                    {"label": "All room speakers", "value": PLAYBACK_MODE_ALL},
+                    {"label": "Primary with fallback", "value": PLAYBACK_MODE_FALLBACK},
+                ]
+            )
+        ),
         vol.Optional(CONF_DEFAULT_VOLUME, default=DEFAULT_VOLUME): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
@@ -125,19 +148,51 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            primary_satellite = user_input[CONF_ASSIST_SATELLITE]
+            primary_player = user_input[CONF_MEDIA_PLAYER]
+            additional_satellites = list(
+                user_input.get(CONF_ADDITIONAL_ASSIST_SATELLITES, [])
+            )
+            additional_players = list(
+                user_input.get(CONF_ADDITIONAL_MEDIA_PLAYERS, [])
+            )
+            all_satellites = [primary_satellite, *additional_satellites]
+            all_players = [primary_player, *additional_players]
+
             if not SchedulerAdapter(self.hass).is_ready:
                 errors["base"] = "scheduler_not_ready"
-            elif self.hass.states.get(user_input[CONF_ASSIST_SATELLITE]) is None:
-                errors[CONF_ASSIST_SATELLITE] = "entity_not_found"
-            elif self.hass.states.get(user_input[CONF_MEDIA_PLAYER]) is None:
-                errors[CONF_MEDIA_PLAYER] = "entity_not_found"
+            elif len(additional_satellites) != len(additional_players):
+                errors["base"] = "playback_target_count_mismatch"
+            elif len(set(all_satellites)) != len(all_satellites):
+                errors["base"] = "duplicate_satellite"
+            elif len(set(all_players)) != len(all_players):
+                errors["base"] = "duplicate_media_player"
+            elif any(self.hass.states.get(entity_id) is None for entity_id in all_satellites):
+                errors["base"] = "entity_not_found"
+            elif any(self.hass.states.get(entity_id) is None for entity_id in all_players):
+                errors["base"] = "entity_not_found"
+            elif self._satellites_already_configured(set(all_satellites)):
+                errors["base"] = "satellite_already_in_room"
             else:
-                await self.async_set_unique_id(user_input[CONF_ASSIST_SATELLITE])
+                await self.async_set_unique_id(primary_satellite)
                 self._abort_if_unique_id_configured()
+
+                data = dict(user_input)
+                data.pop(CONF_ADDITIONAL_ASSIST_SATELLITES, None)
+                data.pop(CONF_ADDITIONAL_MEDIA_PLAYERS, None)
+                data[CONF_ADDITIONAL_PLAYBACK_TARGETS] = [
+                    {
+                        CONF_ASSIST_SATELLITE: satellite,
+                        CONF_MEDIA_PLAYER: player,
+                    }
+                    for satellite, player in zip(
+                        additional_satellites, additional_players, strict=True
+                    )
+                ]
 
                 return self.async_create_entry(
                     title=user_input[CONF_NAME],
-                    data=user_input,
+                    data=data,
                 )
 
         return self.async_show_form(
@@ -145,6 +200,18 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=_config_schema(),
             errors=errors,
         )
+
+    def _satellites_already_configured(self, satellites: set[str]) -> bool:
+        """Return whether any selected satellite already belongs to another endpoint."""
+        for entry in self._async_current_entries():
+            configured = {entry.data.get(CONF_ASSIST_SATELLITE)}
+            for item in entry.data.get(CONF_ADDITIONAL_PLAYBACK_TARGETS, []):
+                if isinstance(item, dict):
+                    configured.add(item.get(CONF_ASSIST_SATELLITE))
+            configured.discard(None)
+            if satellites.intersection(configured):
+                return True
+        return False
 
     @staticmethod
     @callback
