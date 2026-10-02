@@ -451,9 +451,7 @@ class VoiceController:
         if len(name_matches) == 1:
             return name_matches[0]
         if len(name_matches) > 1:
-            raise VoiceCommandError(
-                f"More than one alarm is named {selector} in this room."
-            )
+            raise VoiceCommandError(f"More than one alarm is named {selector} in this room.")
 
         try:
             time_value = parse_alarm_time(_clean_alarm_time_slot(selector))
@@ -643,9 +641,7 @@ def parse_weekday_selection(value: str) -> list[str]:
     """Parse weekday names from a deterministic spoken phrase."""
     text = _normalize_spoken_text(value)
     found = {
-        canonical
-        for token in text.split()
-        if (canonical := _WEEKDAY_WORDS.get(token)) is not None
+        canonical for token in text.split() if (canonical := _WEEKDAY_WORDS.get(token)) is not None
     }
     return [day for day in _WEEKDAY_ORDER if day in found]
 
