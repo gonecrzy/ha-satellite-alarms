@@ -9,6 +9,20 @@ CONF_NAME: Final = "name"
 CONF_AREA_ID: Final = "area_id"
 CONF_ASSIST_SATELLITE: Final = "assist_satellite_entity_id"
 CONF_MEDIA_PLAYER: Final = "media_player_entity_id"
+CONF_ADDITIONAL_PLAYBACK_TARGETS: Final = "additional_playback_targets"
+CONF_ADDITIONAL_ASSIST_SATELLITES: Final = "additional_assist_satellite_entity_ids"
+CONF_ADDITIONAL_MEDIA_PLAYERS: Final = "additional_media_player_entity_ids"
+CONF_PLAYBACK_MODE: Final = "playback_mode"
+
+PLAYBACK_MODE_PRIMARY: Final = "primary"
+PLAYBACK_MODE_ALL: Final = "all"
+PLAYBACK_MODE_FALLBACK: Final = "fallback"
+PLAYBACK_MODES: Final = (
+    PLAYBACK_MODE_PRIMARY,
+    PLAYBACK_MODE_ALL,
+    PLAYBACK_MODE_FALLBACK,
+)
+DEFAULT_PLAYBACK_MODE: Final = PLAYBACK_MODE_PRIMARY
 
 CONF_DEFAULT_VOLUME: Final = "default_volume"
 CONF_DEFAULT_SNOOZE_MINUTES: Final = "default_snooze_minutes"
