@@ -15,7 +15,7 @@ The initial use case is a house with multiple voice satellites—such as EchoMus
 
 The alarm should belong to that room and ring only on that room's configured speaker.
 
-> **Project status:** v0.4 development. Scheduler-backed alarms, room-local ringing, stop/snooze, volume handling, and deterministic Home Assistant Assist voice commands are implemented.
+> **Project status:** v0.5 development. Multiple named alarms, selected weekdays, room-local list/query/cancel voice commands, and deterministic same-room trigger queuing are implemented on top of the v0.4 voice/ringing stack.
 
 ## Goals
 
@@ -97,6 +97,7 @@ assist_satellite_alarms.delete
 assist_satellite_alarms.enable
 assist_satellite_alarms.disable
 assist_satellite_alarms.fire
+assist_satellite_alarms.list
 assist_satellite_alarms.stop
 assist_satellite_alarms.snooze
 ```
@@ -111,16 +112,22 @@ data:
   recurrence: once
 ```
 
-Example weekday alarm:
+Example selected-day named alarm:
 
 ```yaml
 action: assist_satellite_alarms.create
 data:
   endpoint_id: <Satellite Alarms config entry ID>
   time: "06:30:00"
-  recurrence: weekdays
+  recurrence: selected_days
+  days:
+    - mon
+    - wed
+    - fri
   name: Work
 ```
+
+`assist_satellite_alarms.list` returns alarm IDs, names, recurrence, selected days, Scheduler entity IDs, enabled state, and next-trigger data.
 
 `create` returns the stable alarm ID and Scheduler entity mapping when a response is requested. Scheduler Component owns the actual persistent schedule. The internal `fire` action now starts room-local alarm playback through the configured Assist satellite and media player.
 
@@ -193,7 +200,7 @@ See [Project Plan](docs/PROJECT_PLAN.md) for the proposed architecture, restrict
 
 ## Voice control
 
-v0.4 registers deterministic Home Assistant conversation sentence triggers. They are handled locally before the configured conversation agent, so the core alarm phrases do not require an LLM even when a ChatGPT, Gemini, or other conversation agent is selected.
+v0.5 extends the deterministic Home Assistant conversation sentence triggers added in v0.4. They are handled locally before the configured conversation agent, so the core alarm phrases do not require an LLM even when a ChatGPT, Gemini, or other conversation agent is selected.
 
 Supported English examples include:
 
@@ -204,6 +211,11 @@ Wake me at 6:30.
 Set a daily alarm for 8 AM.
 Wake me at 6:30 on weekdays.
 Set a weekend alarm for 8 AM.
+Set a work alarm for 6:30 on Monday Wednesday and Friday.
+What alarms do I have?
+What time is my work alarm?
+Cancel my work alarm.
+Cancel my 6:30 alarm.
 What time is my next alarm?
 Cancel my next alarm.
 Stop the alarm.
@@ -217,7 +229,7 @@ Common spoken clock forms such as `6 AM`, `6:30 PM`, `six thirty`, `six oh five`
 
 Bare `Stop` is intentionally not registered yet because a global sentence trigger would also intercept unrelated media stop commands when no alarm is ringing. Use `Stop the alarm` or `Dismiss the alarm` in v0.4.
 
-Later versions may add named alarms, selected weekdays, richer multi-alarm disambiguation, skip-next, temporary overrides, pre/post alarm actions, morning briefings, fallback speakers, and richer dashboard controls.
+v0.5 supports multiple alarms per endpoint, exact-name lookup, time-based lookup with ambiguity protection, and selected weekdays. Later versions may add skip-next, temporary overrides, pre/post alarm actions, morning briefings, fallback speakers, and richer dashboard controls.
 
 ## Design principles
 
@@ -245,7 +257,7 @@ Wake-up alarms are time-sensitive. Persistence, restart behavior, volume restora
 
 Early releases may intentionally limit:
 
-- Recurrence choices to one-time, daily, weekdays, and weekends.
+- Recurrence choices to one-time, daily, weekdays, weekends, and explicit selected weekdays.
 - Alarm playback to one configured media player per satellite.
 - Voice commands to a documented set of sentence patterns.
 - One active ringing alarm per room.
@@ -301,7 +313,7 @@ The internal file layout may change as the implementation develops.
 
 There is not yet a tagged public release. For development testing, install and configure Scheduler Component first, then install this repository as a HACS custom integration and add each satellite endpoint through Home Assistant's normal integration config flow.
 
-On the v0.4 development branch, scheduled alarms ring through the configured Assist satellite and the documented English alarm phrases can create, query, cancel, stop, and snooze alarms from the originating satellite.
+On the v0.5 development branch, scheduled alarms can also be named, listed, queried/canceled by name or time, and scheduled on explicit weekdays such as Monday/Wednesday/Friday.
 
 ## Contributing
 
