@@ -52,6 +52,10 @@ DATA_ALARM_MANAGER: Final = "alarm_manager"
 DATA_PLAYBACK_MANAGER: Final = "playback_manager"
 DATA_VOICE_CONTROLLER: Final = "voice_controller"
 DATA_RECONCILED: Final = "reconciled"
+DATA_HEALTH_MONITORS: Final = "health_monitors"
+
+SIGNAL_ALARMS_UPDATED: Final = f"{DOMAIN}_alarms_updated"
+SIGNAL_PLAYBACK_UPDATED: Final = f"{DOMAIN}_playback_updated"
 
 STORAGE_KEY: Final = f"{DOMAIN}.registry"
 STORAGE_VERSION: Final = 1
