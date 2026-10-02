@@ -1,6 +1,7 @@
 """Tests for Satellite Alarms config flow."""
 
 from homeassistant.core import HomeAssistant, ServiceCall
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.assist_satellite_alarms.config_flow import SatelliteAlarmsConfigFlow
 from custom_components.assist_satellite_alarms.const import (
@@ -10,6 +11,7 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_ASSIST_SATELLITE,
     CONF_MEDIA_PLAYER,
     CONF_NAME,
+    DOMAIN,
     SCHEDULER_DOMAIN,
 )
 
@@ -83,3 +85,46 @@ async def test_config_flow_rejects_unpaired_additional_targets(
 
     assert result["type"] == "form"
     assert result["errors"]["base"] == "playback_target_count_mismatch"
+
+
+async def test_reconfigure_updates_room_membership(hass: HomeAssistant) -> None:
+    """Reconfigure should update primary/additional pair mappings in place."""
+    for service in ("add", "edit", "remove"):
+        hass.services.async_register(SCHEDULER_DOMAIN, service, _noop)
+    _prepare_entities(hass)
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bedroom",
+        data={
+            CONF_NAME: "Bedroom",
+            CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_left",
+            CONF_MEDIA_PLAYER: "media_player.bedroom_left",
+            CONF_ADDITIONAL_PLAYBACK_TARGETS: [],
+        },
+        entry_id="bedroom-entry",
+    )
+    entry.add_to_hass(hass)
+
+    flow = SatelliteAlarmsConfigFlow()
+    flow.hass = hass
+    flow.context = {"source": "reconfigure", "entry_id": entry.entry_id}
+
+    result = await flow.async_step_reconfigure(
+        {
+            CONF_NAME: "Bedroom",
+            CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_left",
+            CONF_MEDIA_PLAYER: "media_player.bedroom_left",
+            CONF_ADDITIONAL_ASSIST_SATELLITES: ["assist_satellite.bedroom_right"],
+            CONF_ADDITIONAL_MEDIA_PLAYERS: ["media_player.bedroom_right"],
+        }
+    )
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_ADDITIONAL_PLAYBACK_TARGETS] == [
+        {
+            CONF_ASSIST_SATELLITE: "assist_satellite.bedroom_right",
+            CONF_MEDIA_PLAYER: "media_player.bedroom_right",
+        }
+    ]
