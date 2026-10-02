@@ -384,9 +384,7 @@ class AlarmManager:
     def list_responses(self, endpoint_id: str | None = None) -> list[dict[str, object]]:
         """Return service-ready alarm data, optionally scoped to one endpoint."""
         records = (
-            self.sorted_alarms_for_endpoint(endpoint_id)
-            if endpoint_id
-            else self.registry.all()
+            self.sorted_alarms_for_endpoint(endpoint_id) if endpoint_id else self.registry.all()
         )
         return [self.response(record) for record in records]
 
