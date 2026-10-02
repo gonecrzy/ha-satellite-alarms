@@ -341,3 +341,66 @@ async def test_override_next_service_creates_temporary_occurrence(
     )
     assert calls[0][0] == "add"
     assert calls[0][1]["timeslots"][0]["start"] == "07:00:00"
+
+
+async def test_snooze_occurrence_bypasses_parent_skip_marker(
+    hass: HomeAssistant,
+) -> None:
+    """Transient snooze callbacks must ring even when the parent next occurrence is skipped."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bedroom",
+        data={
+            CONF_NAME: "Bedroom",
+            CONF_ASSIST_SATELLITE: "assist_satellite.bedroom",
+            CONF_MEDIA_PLAYER: "media_player.bedroom",
+        },
+        entry_id="bedroom-entry",
+    )
+    entry.add_to_hass(hass)
+
+    for service in ("add", "edit", "remove"):
+        hass.services.async_register(SCHEDULER_DOMAIN, service, _noop)
+    hass.services.async_register("media_player", "volume_set", _noop)
+    hass.services.async_register("media_player", "media_stop", _noop)
+    hass.services.async_register("assist_satellite", "announce", _noop)
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
+
+    registry = AlarmRegistry(hass)
+    await registry.async_load()
+    scheduler = SchedulerAdapter(hass)
+    manager = AlarmManager(hass, registry, scheduler)
+    playback = PlaybackManager(hass, registry, scheduler)
+    await async_register_services(hass, manager, playback)
+
+    created = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_CREATE,
+        {
+            "endpoint_id": entry.entry_id,
+            "time": "06:30:00",
+            "recurrence": "daily",
+        },
+        blocking=True,
+        return_response=True,
+    )
+    await manager.async_set_skip_next(created["alarm_id"])
+
+    fired = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_FIRE,
+        {
+            "alarm_id": created["alarm_id"],
+            "occurrence": "snooze",
+            "occurrence_id": "snooze-1",
+        },
+        blocking=True,
+        return_response=True,
+    )
+    await asyncio.sleep(0)
+
+    assert fired["ringing"] is True
+    assert fired["skipped"] is False
+    assert manager.registry.get(created["alarm_id"]).metadata["skip_next"] is True
+
+    await playback.async_stop(alarm_id=created["alarm_id"])
