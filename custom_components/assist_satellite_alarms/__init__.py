@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
@@ -18,6 +18,7 @@ from .const import (
     BUILTIN_ALARM_MEDIA_FILENAME,
     BUILTIN_ALARM_MEDIA_URL,
     DATA_ALARM_MANAGER,
+    DATA_HEALTH_MONITORS,
     DATA_PLAYBACK_MANAGER,
     DATA_RECONCILED,
     DATA_REGISTRY,
@@ -28,6 +29,7 @@ from .const import (
 from .models import AlarmEndpoint
 from .playback import PlaybackManager
 from .registry import AlarmRegistry
+from .repairs import RoomHealthMonitor
 from .scheduler_adapter import SchedulerAdapter, SchedulerNotReadyError
 from .services import async_register_services
 from .voice import VoiceController
@@ -35,6 +37,8 @@ from .voice import VoiceController
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -53,6 +57,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     domain_data[DATA_ALARM_MANAGER] = manager
     domain_data[DATA_PLAYBACK_MANAGER] = playback
     domain_data[DATA_VOICE_CONTROLLER] = voice
+    domain_data[DATA_HEALTH_MONITORS] = {}
 
     await hass.http.async_register_static_paths(
         [
@@ -73,6 +78,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, async_shutdown)
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload a room endpoint when its data or options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -98,6 +108,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     endpoint = AlarmEndpoint.from_config_entry(entry)
     entry.runtime_data = endpoint
 
+    monitor = RoomHealthMonitor(
+        hass,
+        entry,
+        domain_data[DATA_REGISTRY],
+        adapter,
+    )
+    domain_data[DATA_HEALTH_MONITORS][entry.entry_id] = monitor
+    monitor.start()
+
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     _LOGGER.info(
         "Loaded Satellite Alarms room endpoint %s (%s targets)",
         endpoint.name,
@@ -107,10 +129,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload one Satellite Alarms endpoint."""
-    playback: PlaybackManager = hass.data[DOMAIN][DATA_PLAYBACK_MANAGER]
+    """Unload one Satellite Alarms room endpoint."""
+    domain_data = hass.data[DOMAIN]
+    playback: PlaybackManager = domain_data[DATA_PLAYBACK_MANAGER]
     playback.clear_queue(entry.entry_id)
     active = playback.active_for_endpoint(entry.entry_id)
     if active is not None:
         await playback.async_stop(endpoint_id=entry.entry_id, reason="unload")
-    return True
+
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        monitor = domain_data[DATA_HEALTH_MONITORS].pop(entry.entry_id, None)
+        if monitor is not None:
+            monitor.stop()
+    return unload_ok
