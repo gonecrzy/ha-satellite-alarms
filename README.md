@@ -15,7 +15,7 @@ The initial use case is a house with multiple voice satellites—such as EchoMus
 
 The alarm should belong to that room and ring only on that room's configured speaker.
 
-> **Project status:** v0.7 development. Room endpoints can contain multiple Assist satellite/media-player pairs with primary, all-speakers, or fallback playback modes.
+> **Project status:** v0.7 development. Room endpoints support multiple satellite/media-player pairs, native room status entities, reconfiguration, expanded diagnostics, and repair detection.
 
 ## Goals
 
@@ -215,6 +215,31 @@ pre_actions:
 
 Playback failures emit `assist_satellite_alarms_alarm_failed`. Skip and override lifecycle events are also emitted for automations.
 
+### Room status entities
+
+Each configured room exposes standard Home Assistant entities:
+
+```text
+sensor.<room>_next_alarm
+sensor.<room>_alarm_count
+sensor.<room>_active_alarm
+binary_sensor.<room>_alarm_ringing
+```
+
+These are local-push entities rather than polling sensors. Alarm registry changes, playback changes, and Scheduler state changes refresh them automatically.
+
+The next-alarm sensor includes attributes such as alarm ID, name, recurrence, selected days, enabled state, Scheduler entity, skip-next state, and temporary override metadata. The active-alarm sensor exposes the current room playback mode and participating satellite/media-player targets.
+
+The entities are grouped under one Home Assistant service device for the room endpoint.
+
+### Diagnostics and repairs
+
+Config-entry diagnostics include room target states, playback mode, Scheduler mapping state, active/queued alarms, next triggers, and alarm override/skip metadata.
+
+Satellite Alarms also raises Home Assistant repair warnings when a configured satellite/media-player entity has been removed or when an active recurring/future alarm record has lost its Scheduler schedule. Repairs clear automatically when the missing target or schedule returns.
+
+Room membership can be changed later with Home Assistant's **Reconfigure** action without recreating the alarm collection.
+
 ### Playback defaults
 
 Each endpoint can be configured with:
@@ -256,7 +281,7 @@ See [Project Plan](docs/PROJECT_PLAN.md) for the proposed architecture, restrict
 
 ## Voice control
 
-v0.6 extends the deterministic Home Assistant conversation sentence triggers added in v0.4. They are handled locally before the configured conversation agent, so the core alarm phrases do not require an LLM even when a ChatGPT, Gemini, or other conversation agent is selected.
+The deterministic Home Assistant conversation sentence triggers added in v0.4 remain the primary voice-control path in v0.7. They are handled locally before the configured conversation agent, so the core alarm phrases do not require an LLM even when a ChatGPT, Gemini, or other conversation agent is selected.
 
 Supported English examples include:
 
@@ -288,7 +313,7 @@ Common spoken clock forms such as `6 AM`, `6:30 PM`, `six thirty`, `six oh five`
 
 Bare `Stop` is intentionally not registered yet because a global sentence trigger would also intercept unrelated media stop commands when no alarm is ringing. Use `Stop the alarm` or `Dismiss the alarm` in v0.4.
 
-v0.6 adds skip-next, temporary next-occurrence overrides, per-alarm media/volume/snooze settings, simple pre/post/failure service actions, and an alarm-failure event. Later versions may add morning briefings, richer fallback targeting, dashboard entities, and UI controls.
+v0.7 adds multi-satellite room endpoints, native room status entities, reconfiguration, richer diagnostics, and repair warnings. Later versions may add morning briefings, richer dashboard controls, and optional integrations such as Music Assistant.
 
 ## Design principles
 
@@ -372,7 +397,7 @@ The internal file layout may change as the implementation develops.
 
 There is not yet a tagged public release. For development testing, install and configure Scheduler Component first, then install this repository as a HACS custom integration and add each satellite endpoint through Home Assistant's normal integration config flow.
 
-On the v0.6 development branch, alarms can also skip one occurrence, temporarily move the next occurrence, use per-alarm playback overrides, and invoke simple Home Assistant service actions around alarm playback.
+On the v0.7 development branch, rooms can contain multiple satellite/speaker pairs and expose native next-alarm, alarm-count, ringing, and active-alarm entities.
 
 ## Contributing
 
