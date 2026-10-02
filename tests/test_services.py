@@ -11,12 +11,15 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_MEDIA_PLAYER,
     CONF_NAME,
     DOMAIN,
+    EVENT_ALARM_SKIPPED,
     EVENT_ALARM_STOPPED,
     EVENT_ALARM_TRIGGERED,
     SCHEDULER_DOMAIN,
     SERVICE_CREATE,
     SERVICE_FIRE,
     SERVICE_LIST,
+    SERVICE_OVERRIDE_NEXT,
+    SERVICE_SKIP_NEXT,
     SERVICE_STOP,
 )
 from custom_components.assist_satellite_alarms.playback import PlaybackManager
@@ -194,3 +197,147 @@ async def test_selected_days_and_list_service(hass: HomeAssistant) -> None:
     assert listed["alarms"][0]["alarm_id"] == created["alarm_id"]
     assert listed["alarms"][0]["name"] == "Work"
     assert listed["alarms"][0]["days"] == ["mon", "wed", "fri"]
+
+
+async def test_skip_next_service_suppresses_parent_fire(hass: HomeAssistant) -> None:
+    """A skipped parent occurrence should not start playback."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bedroom",
+        data={
+            CONF_NAME: "Bedroom",
+            CONF_ASSIST_SATELLITE: "assist_satellite.bedroom",
+            CONF_MEDIA_PLAYER: "media_player.bedroom",
+        },
+        entry_id="bedroom-entry",
+    )
+    entry.add_to_hass(hass)
+
+    for service in ("add", "edit", "remove"):
+        hass.services.async_register(SCHEDULER_DOMAIN, service, _noop)
+    hass.services.async_register("media_player", "volume_set", _noop)
+    hass.services.async_register("media_player", "media_stop", _noop)
+    hass.services.async_register("assist_satellite", "announce", _noop)
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
+
+    registry = AlarmRegistry(hass)
+    await registry.async_load()
+    scheduler = SchedulerAdapter(hass)
+    manager = AlarmManager(hass, registry, scheduler)
+    playback = PlaybackManager(hass, registry, scheduler)
+    await async_register_services(hass, manager, playback)
+
+    created = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_CREATE,
+        {
+            "endpoint_id": entry.entry_id,
+            "time": "06:30:00",
+            "recurrence": "daily",
+            "name": "Work",
+        },
+        blocking=True,
+        return_response=True,
+    )
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SKIP_NEXT,
+        {"alarm_id": created["alarm_id"]},
+        blocking=True,
+        return_response=True,
+    )
+
+    events = []
+    unsub = hass.bus.async_listen(EVENT_ALARM_SKIPPED, events.append)
+    try:
+        fired = await hass.services.async_call(
+            DOMAIN,
+            SERVICE_FIRE,
+            {"alarm_id": created["alarm_id"]},
+            blocking=True,
+            return_response=True,
+        )
+        await hass.async_block_till_done()
+    finally:
+        unsub()
+
+    assert fired["skipped"] is True
+    assert fired["ringing"] is False
+    assert playback.active_for_endpoint(entry.entry_id) is None
+    assert len(events) == 1
+
+
+async def test_override_next_service_creates_temporary_occurrence(
+    hass: HomeAssistant,
+) -> None:
+    """Override service should create a transient schedule and preserve the parent."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bedroom",
+        data={
+            CONF_NAME: "Bedroom",
+            CONF_ASSIST_SATELLITE: "assist_satellite.bedroom",
+            CONF_MEDIA_PLAYER: "media_player.bedroom",
+        },
+        entry_id="bedroom-entry",
+    )
+    entry.add_to_hass(hass)
+
+    calls = []
+
+    async def capture(call: ServiceCall) -> None:
+        calls.append((call.service, dict(call.data)))
+
+    for service in ("add", "edit", "remove"):
+        hass.services.async_register(SCHEDULER_DOMAIN, service, capture)
+
+    registry = AlarmRegistry(hass)
+    await registry.async_load()
+    scheduler = SchedulerAdapter(hass)
+    manager = AlarmManager(hass, registry, scheduler)
+    playback = PlaybackManager(hass, registry, scheduler)
+    await async_register_services(hass, manager, playback)
+
+    created = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_CREATE,
+        {
+            "endpoint_id": entry.entry_id,
+            "time": "06:30:00",
+            "recurrence": "daily",
+            "name": "Work",
+        },
+        blocking=True,
+        return_response=True,
+    )
+    parent_entity = scheduler.expected_entity_id(created["alarm_id"])
+    hass.states.async_set(
+        parent_entity,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(created["alarm_id"])],
+            "next_trigger": "2099-09-30T06:30:00-04:00",
+        },
+    )
+    calls.clear()
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_OVERRIDE_NEXT,
+        {
+            "alarm_id": created["alarm_id"],
+            "time": "07:00:00",
+            "date": "2099-09-30",
+        },
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response["skip_next"] is True
+    assert response["override_occurrence_id"]
+    assert response["override_scheduler_entity_id"].startswith(
+        "switch.schedule_assist_satellite_alarm_override_"
+    )
+    assert calls[0][0] == "add"
+    assert calls[0][1]["timeslots"][0]["start"] == "07:00:00"
