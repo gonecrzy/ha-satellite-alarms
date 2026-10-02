@@ -143,52 +143,94 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @staticmethod
+    def _additional_lists(data: dict[str, Any]) -> tuple[list[str], list[str]]:
+        """Return the temporary selector lists used by the room form."""
+        if CONF_ADDITIONAL_PLAYBACK_TARGETS in data:
+            targets = data.get(CONF_ADDITIONAL_PLAYBACK_TARGETS, [])
+            return (
+                [
+                    str(item[CONF_ASSIST_SATELLITE])
+                    for item in targets
+                    if isinstance(item, dict) and item.get(CONF_ASSIST_SATELLITE)
+                ],
+                [
+                    str(item[CONF_MEDIA_PLAYER])
+                    for item in targets
+                    if isinstance(item, dict) and item.get(CONF_MEDIA_PLAYER)
+                ],
+            )
+        return (
+            list(data.get(CONF_ADDITIONAL_ASSIST_SATELLITES, [])),
+            list(data.get(CONF_ADDITIONAL_MEDIA_PLAYERS, [])),
+        )
+
+    @classmethod
+    def _normalized_room_data(cls, user_input: dict[str, Any]) -> dict[str, Any]:
+        """Convert form selector lists into explicit satellite/player pairs."""
+        additional_satellites, additional_players = cls._additional_lists(user_input)
+        data = dict(user_input)
+        data.pop(CONF_ADDITIONAL_ASSIST_SATELLITES, None)
+        data.pop(CONF_ADDITIONAL_MEDIA_PLAYERS, None)
+        data[CONF_ADDITIONAL_PLAYBACK_TARGETS] = [
+            {
+                CONF_ASSIST_SATELLITE: satellite,
+                CONF_MEDIA_PLAYER: player,
+            }
+            for satellite, player in zip(
+                additional_satellites,
+                additional_players,
+                strict=True,
+            )
+        ]
+        return data
+
+    def _validate_room_input(
+        self,
+        user_input: dict[str, Any],
+        *,
+        exclude_entry_id: str | None = None,
+    ) -> dict[str, str]:
+        """Validate one room endpoint form."""
+        errors: dict[str, str] = {}
+        primary_satellite = user_input[CONF_ASSIST_SATELLITE]
+        primary_player = user_input[CONF_MEDIA_PLAYER]
+        additional_satellites, additional_players = self._additional_lists(user_input)
+        all_satellites = [primary_satellite, *additional_satellites]
+        all_players = [primary_player, *additional_players]
+
+        if not SchedulerAdapter(self.hass).is_ready:
+            errors["base"] = "scheduler_not_ready"
+        elif len(additional_satellites) != len(additional_players):
+            errors["base"] = "playback_target_count_mismatch"
+        elif len(set(all_satellites)) != len(all_satellites):
+            errors["base"] = "duplicate_satellite"
+        elif len(set(all_players)) != len(all_players):
+            errors["base"] = "duplicate_media_player"
+        elif any(self.hass.states.get(entity_id) is None for entity_id in all_satellites) or any(
+            self.hass.states.get(entity_id) is None for entity_id in all_players
+        ):
+            errors["base"] = "entity_not_found"
+        elif self._satellites_already_configured(
+            set(all_satellites),
+            exclude_entry_id=exclude_entry_id,
+        ):
+            errors["base"] = "satellite_already_in_room"
+
+        return errors
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Configure a satellite alarm endpoint."""
+        """Configure a Satellite Alarms room endpoint."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            primary_satellite = user_input[CONF_ASSIST_SATELLITE]
-            primary_player = user_input[CONF_MEDIA_PLAYER]
-            additional_satellites = list(user_input.get(CONF_ADDITIONAL_ASSIST_SATELLITES, []))
-            additional_players = list(user_input.get(CONF_ADDITIONAL_MEDIA_PLAYERS, []))
-            all_satellites = [primary_satellite, *additional_satellites]
-            all_players = [primary_player, *additional_players]
-
-            if not SchedulerAdapter(self.hass).is_ready:
-                errors["base"] = "scheduler_not_ready"
-            elif len(additional_satellites) != len(additional_players):
-                errors["base"] = "playback_target_count_mismatch"
-            elif len(set(all_satellites)) != len(all_satellites):
-                errors["base"] = "duplicate_satellite"
-            elif len(set(all_players)) != len(all_players):
-                errors["base"] = "duplicate_media_player"
-            elif any(
-                self.hass.states.get(entity_id) is None for entity_id in all_satellites
-            ) or any(self.hass.states.get(entity_id) is None for entity_id in all_players):
-                errors["base"] = "entity_not_found"
-            elif self._satellites_already_configured(set(all_satellites)):
-                errors["base"] = "satellite_already_in_room"
-            else:
-                await self.async_set_unique_id(primary_satellite)
+            errors = self._validate_room_input(user_input)
+            if not errors:
+                await self.async_set_unique_id(user_input[CONF_ASSIST_SATELLITE])
                 self._abort_if_unique_id_configured()
-
-                data = dict(user_input)
-                data.pop(CONF_ADDITIONAL_ASSIST_SATELLITES, None)
-                data.pop(CONF_ADDITIONAL_MEDIA_PLAYERS, None)
-                data[CONF_ADDITIONAL_PLAYBACK_TARGETS] = [
-                    {
-                        CONF_ASSIST_SATELLITE: satellite,
-                        CONF_MEDIA_PLAYER: player,
-                    }
-                    for satellite, player in zip(
-                        additional_satellites, additional_players, strict=True
-                    )
-                ]
-
                 return self.async_create_entry(
                     title=user_input[CONF_NAME],
-                    data=data,
+                    data=self._normalized_room_data(user_input),
                 )
 
         return self.async_show_form(
@@ -197,9 +239,50 @@ class SatelliteAlarmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    def _satellites_already_configured(self, satellites: set[str]) -> bool:
-        """Return whether any selected satellite already belongs to another endpoint."""
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Reconfigure room membership and the primary playback pair."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            errors = self._validate_room_input(
+                user_input,
+                exclude_entry_id=entry.entry_id,
+            )
+            if not errors:
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    title=user_input[CONF_NAME],
+                    data=self._normalized_room_data(user_input),
+                )
+                return self.async_abort(reason="reconfigure_successful")
+
+        defaults = dict(entry.data)
+        additional_satellites, additional_players = self._additional_lists(defaults)
+        defaults[CONF_ADDITIONAL_ASSIST_SATELLITES] = additional_satellites
+        defaults[CONF_ADDITIONAL_MEDIA_PLAYERS] = additional_players
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                _config_schema(),
+                defaults,
+            ),
+            errors=errors,
+        )
+
+    def _satellites_already_configured(
+        self,
+        satellites: set[str],
+        *,
+        exclude_entry_id: str | None = None,
+    ) -> bool:
+        """Return whether selected satellites belong to another room endpoint."""
         for entry in self._async_current_entries():
+            if entry.entry_id == exclude_entry_id:
+                continue
             configured = {entry.data.get(CONF_ASSIST_SATELLITE)}
             for item in entry.data.get(CONF_ADDITIONAL_PLAYBACK_TARGETS, []):
                 if isinstance(item, dict):

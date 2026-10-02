@@ -8,9 +8,10 @@ Assist satellite endpoint and alarm-specific behavior.
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 
-from .const import STORAGE_KEY, STORAGE_VERSION
+from .const import SIGNAL_ALARMS_UPDATED, STORAGE_KEY, STORAGE_VERSION
 from .models import AlarmRecord
 
 
@@ -19,6 +20,7 @@ class AlarmRegistry:
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the registry."""
+        self.hass = hass
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._alarms: dict[str, AlarmRecord] = {}
 
@@ -35,6 +37,7 @@ class AlarmRegistry:
         await self._store.async_save(
             {"alarms": [record.as_dict() for record in self._alarms.values()]}
         )
+        async_dispatcher_send(self.hass, SIGNAL_ALARMS_UPDATED)
 
     def get(self, alarm_id: str) -> AlarmRecord | None:
         """Return one alarm record."""

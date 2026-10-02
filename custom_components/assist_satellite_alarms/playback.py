@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -48,6 +49,7 @@ from .const import (
     PLAYBACK_MODE_FALLBACK,
     PLAYBACK_MODE_PRIMARY,
     RECURRENCE_ONCE,
+    SIGNAL_PLAYBACK_UPDATED,
     VOLUME_RAMP_STEP_SECONDS,
 )
 from .models import AlarmEndpoint, AlarmRecord, PlaybackTarget
@@ -152,6 +154,7 @@ class PlaybackManager:
     def clear_queue(self, endpoint_id: str) -> None:
         """Drop queued alarms for an endpoint without touching schedules."""
         self._queued_by_endpoint.pop(endpoint_id, None)
+        async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
 
     def _record(self, alarm_id: str) -> AlarmRecord:
         """Return an alarm record or raise."""
@@ -238,6 +241,7 @@ class PlaybackManager:
                     continue
                 target.touched = True
                 active.current_target_index = index
+                async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
                 return
             raise PlaybackError("No fallback media player accepted the alarm volume")
 
@@ -349,6 +353,7 @@ class PlaybackManager:
                         continue
                     target.touched = True
                     active.current_target_index = index
+                    async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
 
                 try:
                     await self._async_announce_target(
@@ -492,6 +497,8 @@ class PlaybackManager:
                         break
                 if not queue:
                     self._queued_by_endpoint.pop(active.endpoint_entry_id, None)
+
+        async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
 
         if record and active.finish_reason in {"stop", "timeout"}:
             await self._async_run_actions(record, META_POST_ACTIONS, reason="post")
@@ -642,6 +649,7 @@ class PlaybackManager:
                 started_at=dt_util.now(),
             )
             self._active_by_endpoint[record.endpoint_entry_id] = active
+            async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
             active.task = self.hass.async_create_task(
                 self._async_run(active, entry, record),
                 f"{DOMAIN} alarm {alarm_id}",
@@ -662,6 +670,7 @@ class PlaybackManager:
                 queue = self._queued_by_endpoint.setdefault(record.endpoint_entry_id, [])
                 if alarm_id not in queue:
                     queue.append(alarm_id)
+                    async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
             return None, True
 
     async def _async_start_queued(self, alarm_id: str) -> None:
@@ -758,6 +767,7 @@ class PlaybackManager:
         """Stop all ringing alarms during Home Assistant shutdown."""
         self._shutting_down = True
         self._queued_by_endpoint.clear()
+        async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
         active = tuple(self._active_by_endpoint.values())
         for item in active:
             with contextlib.suppress(PlaybackError, HomeAssistantError):

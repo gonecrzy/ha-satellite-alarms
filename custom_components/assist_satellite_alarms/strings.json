@@ -21,6 +21,26 @@
           "additional_assist_satellite_entity_ids": "Optional additional satellites in the same room. Selection order is paired with the additional media-player selection.",
           "additional_media_player_entity_ids": "Optional additional media players. Select the same number as additional satellites and in matching order."
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure room alarm endpoint",
+        "description": "Change the room's primary pair or additional Assist satellite/media-player pairs.",
+        "data": {
+          "name": "Endpoint name",
+          "area_id": "Area",
+          "assist_satellite_entity_id": "Primary Assist satellite",
+          "media_player_entity_id": "Primary alarm media player",
+          "additional_assist_satellite_entity_ids": "Additional Assist satellites",
+          "additional_media_player_entity_ids": "Additional alarm media players"
+        },
+        "data_description": {
+          "name": "A friendly room/endpoint name, such as Bedroom.",
+          "area_id": "Optional Home Assistant area for this endpoint.",
+          "assist_satellite_entity_id": "The primary Assist satellite for this room.",
+          "media_player_entity_id": "The media player paired with the primary Assist satellite.",
+          "additional_assist_satellite_entity_ids": "Optional additional satellites in the same room. Selection order is paired with the additional media-player selection.",
+          "additional_media_player_entity_ids": "Optional additional media players. Select the same number as additional satellites and in matching order."
+        }
       }
     },
     "error": {
@@ -63,6 +83,34 @@
           "playback_mode": "Primary only uses the primary pair. All room speakers rings every available pair. Primary with fallback tries the primary pair first, then additional pairs when needed."
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_alarm": {
+        "name": "Next alarm"
+      },
+      "alarm_count": {
+        "name": "Alarm count"
+      },
+      "active_alarm": {
+        "name": "Active alarm"
+      }
+    },
+    "binary_sensor": {
+      "alarm_ringing": {
+        "name": "Alarm ringing"
+      }
+    }
+  },
+  "issues": {
+    "missing_room_target": {
+      "title": "Alarm room target is missing",
+      "description": "The Satellite Alarms room **{room}** references `{entity_id}`, but that entity no longer exists. Restore the entity or reconfigure the room endpoint."
+    },
+    "missing_alarm_schedule": {
+      "title": "Alarm Scheduler schedule is missing",
+      "description": "The alarm **{alarm}** in **{room}** no longer has a matching Scheduler Component schedule. Recreate or remove the alarm so Satellite Alarms and Scheduler Component are synchronized again."
     }
   }
 }
