@@ -117,15 +117,13 @@ class RoomHealthMonitor:
                 or self.hass.states.get(entity_id) is not None
             ):
                 issue_id = (
-                    f"{self.entry.entry_id}_missing_target_"
-                    f"{self._safe_issue_fragment(entity_id)}"
+                    f"{self.entry.entry_id}_missing_target_{self._safe_issue_fragment(entity_id)}"
                 )
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
                 continue
 
             issue_id = (
-                f"{self.entry.entry_id}_missing_target_"
-                f"{self._safe_issue_fragment(entity_id)}"
+                f"{self.entry.entry_id}_missing_target_{self._safe_issue_fragment(entity_id)}"
             )
             desired.add(issue_id)
             ir.async_create_issue(
