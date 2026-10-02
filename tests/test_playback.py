@@ -549,9 +549,7 @@ async def test_all_room_speakers_ring_and_restore_independently(
     hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.25})
     hass.states.async_set("media_player.bedroom_right", "idle", {"volume_level": 0.45})
     calls = _register_playback_services(hass)
-    registry = await _registry_with_alarm(
-        hass, alarm_id="alarm-all", endpoint_id=entry.entry_id
-    )
+    registry = await _registry_with_alarm(hass, alarm_id="alarm-all", endpoint_id=entry.entry_id)
     playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
 
     active = await playback.async_start("alarm-all")
@@ -560,24 +558,15 @@ async def test_all_room_speakers_ring_and_restore_independently(
 
     assert len(active.targets) == 2
     announce_targets = {
-        call[2]["entity_id"]
-        for call in calls
-        if call[:2] == ("assist_satellite", "announce")
+        call[2]["entity_id"] for call in calls if call[:2] == ("assist_satellite", "announce")
     }
     assert announce_targets == {
         "assist_satellite.bedroom",
         "assist_satellite.bedroom_right",
     }
 
-    volume_calls = [
-        call[2]
-        for call in calls
-        if call[:2] == ("media_player", "volume_set")
-    ]
-    restored = {
-        item["entity_id"]: item["volume_level"]
-        for item in volume_calls[-2:]
-    }
+    volume_calls = [call[2] for call in calls if call[:2] == ("media_player", "volume_set")]
+    restored = {item["entity_id"]: item["volume_level"] for item in volume_calls[-2:]}
     assert restored == {
         "media_player.bedroom": 0.25,
         "media_player.bedroom_right": 0.45,
@@ -614,9 +603,7 @@ async def test_fallback_mode_uses_next_available_room_target(
     await playback.async_stop(alarm_id="alarm-fallback")
 
     assert active.assist_satellite_entity_id == "assist_satellite.bedroom_right"
-    announce = next(
-        call for call in calls if call[:2] == ("assist_satellite", "announce")
-    )
+    announce = next(call for call in calls if call[:2] == ("assist_satellite", "announce"))
     assert announce[2]["entity_id"] == "assist_satellite.bedroom_right"
 
 
