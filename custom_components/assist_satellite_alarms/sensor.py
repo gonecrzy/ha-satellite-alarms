@@ -93,12 +93,15 @@ class AlarmCountSensor(SatelliteAlarmRoomEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return enabled and queued counts."""
         records = self.manager.alarms_for_endpoint(self.entry.entry_id)
-        enabled_count = sum(
-            self.manager.response(record).get("enabled") is True for record in records
-        )
+        enabled_states = [
+            self.manager.response(record).get("enabled") for record in records
+        ]
+        enabled_count = sum(state is True for state in enabled_states)
+        disabled_count = sum(state is False for state in enabled_states)
         return {
             "enabled_count": enabled_count,
-            "disabled_count": len(records) - enabled_count,
+            "disabled_count": disabled_count,
+            "unknown_schedule_count": len(records) - enabled_count - disabled_count,
             "queued_count": len(self.playback.queued_for_endpoint(self.entry.entry_id)),
         }
 
