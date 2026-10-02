@@ -382,9 +382,7 @@ class PlaybackManager:
             )
             return active
 
-    async def async_start_or_queue(
-        self, alarm_id: str
-    ) -> tuple[ActiveAlarm | None, bool]:
+    async def async_start_or_queue(self, alarm_id: str) -> tuple[ActiveAlarm | None, bool]:
         """Start an alarm or queue it if another alarm owns the endpoint."""
         try:
             return await self.async_start(alarm_id), False
