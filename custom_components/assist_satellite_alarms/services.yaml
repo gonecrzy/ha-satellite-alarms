@@ -27,6 +27,29 @@ create:
               value: weekdays
             - label: Weekends
               value: weekends
+            - label: Selected days
+              value: selected_days
+    days:
+      name: Days
+      description: Weekdays used when recurrence is Selected days.
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
     date:
       name: Date
       description: Optional date for a one-time alarm. If omitted, the next occurrence of the requested time is used.
@@ -63,6 +86,29 @@ update:
               value: weekdays
             - label: Weekends
               value: weekends
+            - label: Selected days
+              value: selected_days
+    days:
+      name: Days
+      description: Weekdays used when recurrence is Selected days.
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
     date:
       name: Date
       selector:
@@ -71,6 +117,17 @@ update:
       name: Name
       selector:
         text:
+
+list:
+  name: List alarms
+  description: List Satellite Alarms, optionally scoped to one configured endpoint.
+  fields:
+    endpoint_id:
+      name: Endpoint
+      description: Optional configured endpoint. Omit to list alarms from all endpoints.
+      selector:
+        config_entry:
+          integration: assist_satellite_alarms
 
 delete:
   name: Delete alarm
