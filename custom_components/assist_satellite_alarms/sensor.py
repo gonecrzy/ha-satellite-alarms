@@ -93,9 +93,7 @@ class AlarmCountSensor(SatelliteAlarmRoomEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return enabled and queued counts."""
         records = self.manager.alarms_for_endpoint(self.entry.entry_id)
-        enabled_states = [
-            self.manager.response(record).get("enabled") for record in records
-        ]
+        enabled_states = [self.manager.response(record).get("enabled") for record in records]
         enabled_count = sum(state is True for state in enabled_states)
         disabled_count = sum(state is False for state in enabled_states)
         return {
@@ -123,7 +121,7 @@ class ActiveAlarmSensor(SatelliteAlarmRoomEntity, SensorEntity):
         if active is None:
             return None
         record = self.manager.registry.get(active.alarm_id)
-        return (record.name if record and record.name else active.alarm_id)
+        return record.name if record and record.name else active.alarm_id
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -140,11 +138,7 @@ class ActiveAlarmSensor(SatelliteAlarmRoomEntity, SensorEntity):
             "playback_mode": active.playback_mode,
             "current_assist_satellite": active.assist_satellite_entity_id,
             "current_media_player": active.media_player_entity_id,
-            "assist_satellites": [
-                target.assist_satellite_entity_id for target in active.targets
-            ],
+            "assist_satellites": [target.assist_satellite_entity_id for target in active.targets],
             "media_players": [target.media_player_entity_id for target in active.targets],
-            "queued_alarm_ids": list(
-                self.playback.queued_for_endpoint(self.entry.entry_id)
-            ),
+            "queued_alarm_ids": list(self.playback.queued_for_endpoint(self.entry.entry_id)),
         }
