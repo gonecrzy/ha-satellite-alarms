@@ -99,10 +99,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = endpoint
 
     _LOGGER.info(
-        "Loaded Satellite Alarms endpoint %s (%s -> %s)",
+        "Loaded Satellite Alarms room endpoint %s (%s targets)",
         endpoint.name,
-        endpoint.assist_satellite_entity_id,
-        endpoint.media_player_entity_id,
+        len(endpoint.playback_targets),
     )
     return True
 
