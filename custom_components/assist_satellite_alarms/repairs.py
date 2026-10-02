@@ -8,8 +8,16 @@ from homeassistant.core import CALLBACK_TYPE, CoreState, Event, HomeAssistant, c
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, SIGNAL_ALARMS_UPDATED
+from .const import (
+    DOMAIN,
+    META_DATE,
+    META_RECURRENCE,
+    META_TIME,
+    RECURRENCE_ONCE,
+    SIGNAL_ALARMS_UPDATED,
+)
 from .models import AlarmEndpoint
 from .registry import AlarmRegistry
 from .scheduler_adapter import SchedulerAdapter
@@ -139,6 +147,21 @@ class RoomHealthMonitor:
             if self.scheduler.find_entity_id(record.alarm_id) is not None:
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
                 continue
+
+            if record.metadata.get(META_RECURRENCE) == RECURRENCE_ONCE:
+                date_value = record.metadata.get(META_DATE)
+                time_value = record.metadata.get(META_TIME)
+                parsed_date = dt_util.parse_date(str(date_value)) if date_value else None
+                parsed_time = dt_util.parse_time(str(time_value)) if time_value else None
+                if parsed_date and parsed_time:
+                    scheduled = dt_util.start_of_local_day(parsed_date).replace(
+                        hour=parsed_time.hour,
+                        minute=parsed_time.minute,
+                        second=parsed_time.second,
+                    )
+                    if scheduled <= dt_util.now():
+                        ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                        continue
 
             desired.add(issue_id)
             ir.async_create_issue(
