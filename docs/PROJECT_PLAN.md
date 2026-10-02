@@ -1023,11 +1023,11 @@ Deliverables:
 
 - Skip next occurrence.
 - Temporary next-occurrence override.
-- Improved volume ramp.
+- Per-alarm media/volume/snooze overrides.
 - Optional pre-alarm actions.
 - Optional post-dismiss actions.
-- Per-alarm sound/volume.
-- Failure/fallback hooks.
+- Failure events and simple failure actions.
+- Preserve the existing bounded volume-ramp behavior.
 
 Examples:
 
@@ -1035,6 +1035,31 @@ Examples:
 Skip tomorrow's alarm.
 Tomorrow wake me at 7 instead.
 ```
+
+#### v0.6 implementation status
+
+Implemented in the v0.6 development branch:
+
+- `assist_satellite_alarms.skip_next`
+- persistent skip-next metadata consumed only by the normal parent Scheduler callback
+- transient snooze/override callbacks explicitly identified so they bypass parent skip-next state
+- `assist_satellite_alarms.override_next`
+- recurring next-occurrence overrides implemented as transient one-time Scheduler schedules
+- one-time alarm overrides implemented by editing the existing one-time schedule
+- voice `Skip my next alarm`
+- voice `Skip tomorrow's alarm`
+- voice `Tomorrow wake me at 7 instead`
+- per-alarm media override
+- per-alarm volume override
+- per-alarm default snooze duration
+- simple sequential pre-alarm service actions
+- post-stop/timeout service actions
+- failure service actions
+- `assist_satellite_alarms_alarm_failed` event
+- cleanup of transient override schedules when alarms are edited, disabled, deleted, or replaced
+- queued-alarm playback failures run the same failure hook path
+
+Scheduler Component remains the source of truth for the parent recurrence and next-trigger calculation. Temporary override schedules are children of the parent alarm and never replace the recurring parent definition.
 
 ### v0.7 — UI and ecosystem
 
@@ -1157,7 +1182,7 @@ These should be resolved through implementation/testing rather than guessed up f
 2. Whether to restore prior media playback in addition to volume.
 3. Whether any alarm-specific missed-alarm grace behavior is needed beyond Scheduler Component's restart handling.
 4. How alarm entities should be represented without creating entity clutter.
-5. Whether pre/post actions should be scripts, generic actions, or events.
+5. Whether pre/post hooks should expand beyond the v0.6 simple sequential service-action format.
 6. Whether a future configurable playback strategy should supplement the current `assist_satellite.announce` path.
 7. How much date parsing should remain deterministic before optionally delegating language interpretation to an LLM.
 8. Whether bare `Stop` can be implemented without stealing unrelated stop commands when no alarm is active.
