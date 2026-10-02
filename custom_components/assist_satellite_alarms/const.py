@@ -50,6 +50,7 @@ SERVICE_DISABLE: Final = "disable"
 SERVICE_FIRE: Final = "fire"
 SERVICE_STOP: Final = "stop"
 SERVICE_SNOOZE: Final = "snooze"
+SERVICE_LIST: Final = "list"
 
 ATTR_ALARM_ID: Final = "alarm_id"
 ATTR_ENDPOINT_ID: Final = "endpoint_id"
@@ -57,21 +58,42 @@ ATTR_TIME: Final = "time"
 ATTR_DATE: Final = "date"
 ATTR_RECURRENCE: Final = "recurrence"
 ATTR_MINUTES: Final = "minutes"
+ATTR_DAYS: Final = "days"
 
 RECURRENCE_ONCE: Final = "once"
 RECURRENCE_DAILY: Final = "daily"
 RECURRENCE_WEEKDAYS: Final = "weekdays"
 RECURRENCE_WEEKENDS: Final = "weekends"
+RECURRENCE_SELECTED_DAYS: Final = "selected_days"
 RECURRENCES: Final = (
     RECURRENCE_ONCE,
     RECURRENCE_DAILY,
     RECURRENCE_WEEKDAYS,
     RECURRENCE_WEEKENDS,
+    RECURRENCE_SELECTED_DAYS,
+)
+
+WEEKDAY_MON: Final = "mon"
+WEEKDAY_TUE: Final = "tue"
+WEEKDAY_WED: Final = "wed"
+WEEKDAY_THU: Final = "thu"
+WEEKDAY_FRI: Final = "fri"
+WEEKDAY_SAT: Final = "sat"
+WEEKDAY_SUN: Final = "sun"
+WEEKDAYS: Final = (
+    WEEKDAY_MON,
+    WEEKDAY_TUE,
+    WEEKDAY_WED,
+    WEEKDAY_THU,
+    WEEKDAY_FRI,
+    WEEKDAY_SAT,
+    WEEKDAY_SUN,
 )
 
 META_TIME: Final = "time"
 META_DATE: Final = "date"
 META_RECURRENCE: Final = "recurrence"
+META_DAYS: Final = "days"
 
 EVENT_ALARM_TRIGGERED: Final = f"{DOMAIN}_alarm_triggered"
 EVENT_ALARM_STOPPED: Final = f"{DOMAIN}_alarm_stopped"
