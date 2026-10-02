@@ -13,6 +13,7 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_DEFAULT_SNOOZE_MINUTES,
     CONF_MEDIA_PLAYER,
     CONF_NAME,
+    CONF_VOLUME_RAMP_ENABLED,
     DOMAIN,
     META_ALARM_MEDIA,
     META_ALARM_VOLUME,
@@ -420,7 +421,7 @@ async def test_shutdown_drops_queued_alarms(hass: HomeAssistant) -> None:
 
 async def test_per_alarm_media_volume_and_actions(hass: HomeAssistant) -> None:
     """Per-alarm playback overrides and pre/post service actions should be honored."""
-    entry = _add_endpoint(hass)
+    entry = _add_endpoint(hass, options={CONF_VOLUME_RAMP_ENABLED: False})
     hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.25})
     calls = _register_playback_services(hass)
 
