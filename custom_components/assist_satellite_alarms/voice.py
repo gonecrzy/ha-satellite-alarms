@@ -15,7 +15,6 @@ from homeassistant.util import dt as dt_util
 
 from .alarm_manager import AlarmManager
 from .const import (
-    CONF_ASSIST_SATELLITE,
     DOMAIN,
     META_RECURRENCE,
     META_TIME,
@@ -25,7 +24,7 @@ from .const import (
     RECURRENCE_WEEKDAYS,
     RECURRENCE_WEEKENDS,
 )
-from .models import AlarmRecord
+from .models import AlarmEndpoint, AlarmRecord
 from .playback import ActiveAlarmNotFoundError, PlaybackError, PlaybackManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -267,14 +266,15 @@ class VoiceController:
         )
 
     def resolve_endpoint_id(self, user_input: ConversationInput) -> str:
-        """Resolve the configured endpoint that owns the originating satellite."""
+        """Resolve the room endpoint that owns the originating satellite."""
         entries = self.hass.config_entries.async_entries(DOMAIN)
 
         if user_input.satellite_id:
             matches = [
                 entry
                 for entry in entries
-                if entry.data.get(CONF_ASSIST_SATELLITE) == user_input.satellite_id
+                if user_input.satellite_id
+                in AlarmEndpoint.from_config_entry(entry).assist_satellite_entity_ids
             ]
             if len(matches) == 1:
                 return matches[0].entry_id
@@ -283,11 +283,12 @@ class VoiceController:
             entity_registry = er.async_get(self.hass)
             matches = []
             for entry in entries:
-                satellite_entity_id = entry.data.get(CONF_ASSIST_SATELLITE)
-                if not satellite_entity_id:
-                    continue
-                satellite_entry = entity_registry.async_get(satellite_entity_id)
-                if satellite_entry and satellite_entry.device_id == user_input.device_id:
+                endpoint = AlarmEndpoint.from_config_entry(entry)
+                if any(
+                    (satellite_entry := entity_registry.async_get(satellite_entity_id))
+                    and satellite_entry.device_id == user_input.device_id
+                    for satellite_entity_id in endpoint.assist_satellite_entity_ids
+                ):
                     matches.append(entry)
 
             if len(matches) == 1:

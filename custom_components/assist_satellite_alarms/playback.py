@@ -22,12 +22,14 @@ from .const import (
     CONF_DEFAULT_SNOOZE_MINUTES,
     CONF_DEFAULT_VOLUME,
     CONF_MAX_RING_MINUTES,
+    CONF_PLAYBACK_MODE,
     CONF_VOLUME_RAMP_ENABLED,
     CONF_VOLUME_RAMP_SECONDS,
     CONF_VOLUME_RAMP_START,
     DEFAULT_ALARM_MEDIA,
     DEFAULT_ALARM_MESSAGE,
     DEFAULT_MAX_RING_MINUTES,
+    DEFAULT_PLAYBACK_MODE,
     DEFAULT_SNOOZE_MINUTES,
     DEFAULT_VOLUME,
     DEFAULT_VOLUME_RAMP_ENABLED,
@@ -42,10 +44,13 @@ from .const import (
     META_PRE_ACTIONS,
     META_RECURRENCE,
     META_SNOOZE_MINUTES,
+    PLAYBACK_MODE_ALL,
+    PLAYBACK_MODE_FALLBACK,
+    PLAYBACK_MODE_PRIMARY,
     RECURRENCE_ONCE,
     VOLUME_RAMP_STEP_SECONDS,
 )
-from .models import AlarmEndpoint, AlarmRecord
+from .models import AlarmEndpoint, AlarmRecord, PlaybackTarget
 from .registry import AlarmRegistry
 from .scheduler_adapter import SchedulerAdapter
 
@@ -72,18 +77,43 @@ class ActiveAlarmNotFoundError(PlaybackError):
 
 
 @dataclass(slots=True)
+class ActivePlaybackTarget:
+    """Runtime state for one room playback target."""
+
+    assist_satellite_entity_id: str
+    media_player_entity_id: str
+    previous_volume: float | None
+    touched: bool = False
+
+
+@dataclass(slots=True)
 class ActiveAlarm:
     """Runtime state for one ringing alarm."""
 
     alarm_id: str
     endpoint_entry_id: str
-    assist_satellite_entity_id: str
-    media_player_entity_id: str
-    previous_volume: float | None
+    playback_mode: str
+    targets: list[ActivePlaybackTarget]
     started_at: datetime
+    current_target_index: int = 0
     task: asyncio.Task[None] | None = None
     ramp_task: asyncio.Task[None] | None = None
     finish_reason: str | None = None
+
+    @property
+    def assist_satellite_entity_id(self) -> str:
+        """Return the current/primary Assist satellite for compatibility."""
+        return self.targets[self.current_target_index].assist_satellite_entity_id
+
+    @property
+    def media_player_entity_id(self) -> str:
+        """Return the current/primary media player for compatibility."""
+        return self.targets[self.current_target_index].media_player_entity_id
+
+    @property
+    def previous_volume(self) -> float | None:
+        """Return the current/primary previous volume for compatibility."""
+        return self.targets[self.current_target_index].previous_volume
 
 
 class PlaybackManager:
@@ -146,6 +176,75 @@ class PlaybackManager:
         """Return a configured option or its default."""
         return entry.options.get(key, default)
 
+    def _runtime_target(self, target: PlaybackTarget) -> ActivePlaybackTarget | None:
+        """Build runtime target state when both satellite and player are available."""
+        satellite_state = self.hass.states.get(target.assist_satellite_entity_id)
+        player_state = self.hass.states.get(target.media_player_entity_id)
+        unavailable = {STATE_UNAVAILABLE, STATE_UNKNOWN}
+
+        if (
+            (satellite_state is not None and satellite_state.state in unavailable)
+            or player_state is None
+            or player_state.state in unavailable
+        ):
+            return None
+
+        previous_volume_raw = player_state.attributes.get(ATTR_VOLUME_LEVEL)
+        previous_volume = (
+            float(previous_volume_raw) if isinstance(previous_volume_raw, int | float) else None
+        )
+        return ActivePlaybackTarget(
+            assist_satellite_entity_id=target.assist_satellite_entity_id,
+            media_player_entity_id=target.media_player_entity_id,
+            previous_volume=previous_volume,
+        )
+
+    def _selected_targets(self, active: ActiveAlarm) -> list[ActivePlaybackTarget]:
+        """Return targets that should currently receive playback."""
+        if active.playback_mode == PLAYBACK_MODE_ALL:
+            return active.targets
+        return [active.targets[active.current_target_index]]
+
+    async def _async_set_mode_volume(self, active: ActiveAlarm, volume: float) -> None:
+        """Set alarm volume for the active playback mode."""
+        if active.playback_mode == PLAYBACK_MODE_ALL:
+            successes = 0
+            for target in active.targets:
+                try:
+                    await self._async_set_volume(target.media_player_entity_id, volume)
+                    target.touched = True
+                    successes += 1
+                except HomeAssistantError:
+                    _LOGGER.warning(
+                        "Could not set alarm volume for %s",
+                        target.media_player_entity_id,
+                        exc_info=True,
+                    )
+            if successes == 0:
+                raise PlaybackError("No room media player accepted the alarm volume")
+            return
+
+        if active.playback_mode == PLAYBACK_MODE_FALLBACK:
+            for index in range(active.current_target_index, len(active.targets)):
+                target = active.targets[index]
+                try:
+                    await self._async_set_volume(target.media_player_entity_id, volume)
+                except HomeAssistantError:
+                    _LOGGER.warning(
+                        "Fallback alarm media player %s rejected volume; trying next",
+                        target.media_player_entity_id,
+                        exc_info=True,
+                    )
+                    continue
+                target.touched = True
+                active.current_target_index = index
+                return
+            raise PlaybackError("No fallback media player accepted the alarm volume")
+
+        target = active.targets[active.current_target_index]
+        await self._async_set_volume(target.media_player_entity_id, volume)
+        target.touched = True
+
     async def _async_set_volume(self, entity_id: str, volume: float) -> None:
         """Set media-player volume."""
         await self.hass.services.async_call(
@@ -172,23 +271,16 @@ class PlaybackManager:
         except HomeAssistantError:
             _LOGGER.debug("Media stop failed for %s", entity_id, exc_info=True)
 
-    async def _async_announce(
-        self, active: ActiveAlarm, entry: ConfigEntry, record: AlarmRecord
+    async def _async_announce_target(
+        self,
+        target: ActivePlaybackTarget,
+        *,
+        media_id: str,
+        message: str,
     ) -> None:
-        """Play one alarm announcement on the Assist satellite."""
-        configured_media = record.metadata.get(META_ALARM_MEDIA)
-        media_id = str(
-            configured_media
-            if configured_media is not None
-            else self._option(entry, CONF_DEFAULT_ALARM_MEDIA, DEFAULT_ALARM_MEDIA) or ""
-        ).strip()
-        message = str(
-            self._option(entry, CONF_DEFAULT_ALARM_MESSAGE, DEFAULT_ALARM_MESSAGE)
-            or DEFAULT_ALARM_MESSAGE
-        ).strip()
-
+        """Play one alarm announcement on one room satellite."""
         service_data: dict[str, Any] = {
-            ATTR_ENTITY_ID: active.assist_satellite_entity_id,
+            ATTR_ENTITY_ID: target.assist_satellite_entity_id,
             "preannounce": not bool(media_id),
         }
         if media_id:
@@ -201,6 +293,82 @@ class PlaybackManager:
             ASSIST_SATELLITE_ANNOUNCE,
             service_data,
             blocking=True,
+        )
+
+    async def _async_announce(
+        self,
+        active: ActiveAlarm,
+        entry: ConfigEntry,
+        record: AlarmRecord,
+        *,
+        target_volume: float,
+    ) -> None:
+        """Play one alarm announcement according to the room playback mode."""
+        configured_media = record.metadata.get(META_ALARM_MEDIA)
+        media_id = str(
+            configured_media
+            if configured_media is not None
+            else self._option(entry, CONF_DEFAULT_ALARM_MEDIA, DEFAULT_ALARM_MEDIA) or ""
+        ).strip()
+        message = str(
+            self._option(entry, CONF_DEFAULT_ALARM_MESSAGE, DEFAULT_ALARM_MESSAGE)
+            or DEFAULT_ALARM_MESSAGE
+        ).strip()
+
+        if active.playback_mode == PLAYBACK_MODE_ALL:
+            successes = 0
+            for target in active.targets:
+                try:
+                    await self._async_announce_target(
+                        target,
+                        media_id=media_id,
+                        message=message,
+                    )
+                    successes += 1
+                except HomeAssistantError:
+                    _LOGGER.warning(
+                        "Alarm announcement failed for room target %s",
+                        target.assist_satellite_entity_id,
+                        exc_info=True,
+                    )
+            if successes == 0:
+                raise HomeAssistantError("Alarm announcement failed on every room target")
+            return
+
+        if active.playback_mode == PLAYBACK_MODE_FALLBACK:
+            start_index = active.current_target_index
+            for index in range(start_index, len(active.targets)):
+                target = active.targets[index]
+                if index != active.current_target_index:
+                    try:
+                        await self._async_set_volume(
+                            target.media_player_entity_id,
+                            target_volume,
+                        )
+                    except HomeAssistantError:
+                        continue
+                    target.touched = True
+                    active.current_target_index = index
+
+                try:
+                    await self._async_announce_target(
+                        target,
+                        media_id=media_id,
+                        message=message,
+                    )
+                    return
+                except HomeAssistantError:
+                    _LOGGER.warning(
+                        "Alarm announcement failed for fallback target %s; trying next",
+                        target.assist_satellite_entity_id,
+                        exc_info=True,
+                    )
+            raise HomeAssistantError("Alarm announcement failed on every fallback target")
+
+        await self._async_announce_target(
+            active.targets[active.current_target_index],
+            media_id=media_id,
+            message=message,
         )
 
     async def _async_run_actions(
@@ -263,9 +431,9 @@ class PlaybackManager:
         target_volume: float,
         duration_seconds: float,
     ) -> None:
-        """Ramp volume in bounded steps."""
+        """Ramp alarm volume for all targets selected by the playback mode."""
         if duration_seconds <= 0 or target_volume <= start_volume:
-            await self._async_set_volume(active.media_player_entity_id, target_volume)
+            await self._async_set_mode_volume(active, target_volume)
             return
 
         steps = max(
@@ -280,7 +448,7 @@ class PlaybackManager:
         for step in range(1, steps + 1):
             await asyncio.sleep(delay)
             level = start_volume + ((target_volume - start_volume) * step / steps)
-            await self._async_set_volume(active.media_player_entity_id, level)
+            await self._async_set_mode_volume(active, level)
 
     async def _async_finalize(self, active: ActiveAlarm) -> None:
         """Restore volume, run final actions, and clear runtime state."""
@@ -290,13 +458,21 @@ class PlaybackManager:
             with contextlib.suppress(asyncio.CancelledError):
                 await active.ramp_task
 
-        if active.previous_volume is not None:
+        for target in active.targets:
+            if not target.touched:
+                continue
+            await self._async_stop_media(target.media_player_entity_id)
+            if target.previous_volume is None:
+                continue
             try:
-                await self._async_set_volume(active.media_player_entity_id, active.previous_volume)
+                await self._async_set_volume(
+                    target.media_player_entity_id,
+                    target.previous_volume,
+                )
             except HomeAssistantError:
                 _LOGGER.warning(
                     "Could not restore volume for %s",
-                    active.media_player_entity_id,
+                    target.media_player_entity_id,
                     exc_info=True,
                 )
 
@@ -362,7 +538,7 @@ class PlaybackManager:
             await self._async_run_actions(record, META_PRE_ACTIONS, reason="pre")
             if ramp_enabled:
                 start_volume = min(ramp_start, target_volume)
-                await self._async_set_volume(active.media_player_entity_id, start_volume)
+                await self._async_set_mode_volume(active, start_volume)
                 active.ramp_task = self.hass.async_create_task(
                     self._async_ramp_volume(
                         active,
@@ -373,7 +549,7 @@ class PlaybackManager:
                     f"{DOMAIN} volume ramp {active.alarm_id}",
                 )
             else:
-                await self._async_set_volume(active.media_player_entity_id, target_volume)
+                await self._async_set_mode_volume(active, target_volume)
 
             while True:
                 remaining = deadline - asyncio.get_running_loop().time()
@@ -383,14 +559,19 @@ class PlaybackManager:
 
                 try:
                     async with asyncio.timeout(remaining):
-                        await self._async_announce(active, entry, record)
+                        await self._async_announce(
+                            active,
+                            entry,
+                            record,
+                            target_volume=target_volume,
+                        )
                 except TimeoutError:
                     active.finish_reason = "timeout"
                     break
                 except HomeAssistantError:
                     _LOGGER.warning(
-                        "Alarm announcement failed for %s; retrying",
-                        active.assist_satellite_entity_id,
+                        "Alarm announcement failed for room %s; retrying",
+                        active.endpoint_entry_id,
                         exc_info=True,
                     )
 
@@ -406,7 +587,6 @@ class PlaybackManager:
             _LOGGER.exception("Alarm playback failed for %s", active.alarm_id)
             await self.async_handle_failure(active.alarm_id, str(err))
         finally:
-            await self._async_stop_media(active.media_player_entity_id)
             await self._async_finalize(active)
 
     async def async_start(self, alarm_id: str) -> ActiveAlarm:
@@ -420,19 +600,32 @@ class PlaybackManager:
         if not self.hass.services.has_service(MEDIA_PLAYER_DOMAIN, MEDIA_PLAYER_VOLUME_SET):
             raise PlaybackError("media_player.volume_set is not available")
 
-        player_state = self.hass.states.get(endpoint.media_player_entity_id)
-        if player_state is None or player_state.state in {
-            STATE_UNAVAILABLE,
-            STATE_UNKNOWN,
+        playback_mode = str(self._option(entry, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE))
+        if playback_mode not in {
+            PLAYBACK_MODE_PRIMARY,
+            PLAYBACK_MODE_ALL,
+            PLAYBACK_MODE_FALLBACK,
         }:
-            raise PlaybackError(
-                f"Alarm media player is unavailable: {endpoint.media_player_entity_id}"
-            )
+            playback_mode = DEFAULT_PLAYBACK_MODE
 
-        previous_volume_raw = player_state.attributes.get(ATTR_VOLUME_LEVEL)
-        previous_volume = (
-            float(previous_volume_raw) if isinstance(previous_volume_raw, int | float) else None
-        )
+        configured_targets = endpoint.playback_targets
+        if playback_mode == PLAYBACK_MODE_PRIMARY:
+            runtime_target = self._runtime_target(configured_targets[0])
+            if runtime_target is None:
+                raise PlaybackError(
+                    "Primary alarm satellite/media player is unavailable: "
+                    f"{configured_targets[0].assist_satellite_entity_id} / "
+                    f"{configured_targets[0].media_player_entity_id}"
+                )
+            targets = [runtime_target]
+        else:
+            targets = [
+                runtime_target
+                for target in configured_targets
+                if (runtime_target := self._runtime_target(target)) is not None
+            ]
+            if not targets:
+                raise PlaybackError("No configured room alarm target is available")
 
         async with self._lock:
             if record.endpoint_entry_id in self._active_by_endpoint:
@@ -444,9 +637,8 @@ class PlaybackManager:
             active = ActiveAlarm(
                 alarm_id=alarm_id,
                 endpoint_entry_id=record.endpoint_entry_id,
-                assist_satellite_entity_id=endpoint.assist_satellite_entity_id,
-                media_player_entity_id=endpoint.media_player_entity_id,
-                previous_volume=previous_volume,
+                playback_mode=playback_mode,
+                targets=targets,
                 started_at=dt_util.now(),
             )
             self._active_by_endpoint[record.endpoint_entry_id] = active
@@ -512,7 +704,9 @@ class PlaybackManager:
         active = self._resolve_active(alarm_id=alarm_id, endpoint_id=endpoint_id)
         active.finish_reason = reason
 
-        await self._async_stop_media(active.media_player_entity_id)
+        for target in active.targets:
+            if target.touched:
+                await self._async_stop_media(target.media_player_entity_id)
 
         if active.task and not active.task.done():
             active.task.cancel()
