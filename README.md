@@ -15,7 +15,7 @@ The initial use case is a house with multiple voice satellites—such as EchoMus
 
 The alarm should belong to that room and ring only on that room's configured speaker.
 
-> **Project status:** v0.6 development. Skip-next, temporary next-occurrence overrides, per-alarm playback settings, pre/post/failure actions, and playback-failure hooks are implemented on top of the v0.5 multi-alarm stack.
+> **Project status:** v0.7 development. Room endpoints can contain multiple Assist satellite/media-player pairs with primary, all-speakers, or fallback playback modes.
 
 ## Goals
 
@@ -63,13 +63,18 @@ Configured media_player
 Alarm sound / announcement
 ```
 
-Each configured room will associate an Assist satellite with the media player that should ring there.
+Each configured room owns one primary Assist satellite/media-player pair and may contain additional paired satellites and speakers. All satellites in the room resolve to the same alarm collection.
 
 ```text
-assist_satellite.bedroom_voice_assistant
+Bedroom alarm endpoint
         |
-        +--> media_player.bedroom_voice_assistant
-        +--> Bedroom alarm collection
+        +--> assist_satellite.bedside_left
+        |       +--> media_player.bedside_left
+        |
+        +--> assist_satellite.bedside_right
+        |       +--> media_player.bedside_right
+        |
+        +--> shared Bedroom alarm collection
 ```
 
 The design is intentionally generic. EchoMuse satellites are a primary development target, but the integration should work with other Home Assistant voice satellites and compatible media players.
@@ -214,7 +219,8 @@ Playback failures emit `assist_satellite_alarms_alarm_failed`. Skip and override
 
 Each endpoint can be configured with:
 
-- default alarm volume
+- room playback mode: primary only, all room speakers, or primary with fallback
+- target alarm volume
 - default snooze duration
 - gradual volume ramp and ramp duration
 - maximum ring duration
@@ -226,7 +232,7 @@ The default alarm sound is a bundled 4-second two-tone MP3 generated specificall
 
 A custom endpoint media URL/media-source ID can replace the bundled tone. If alarm media is explicitly cleared, the integration falls back to a short spoken `Alarm` announcement.
 
-The integration saves the media player's current volume before ringing and restores it after stop, snooze, or timeout. v0.3 does not attempt to restore the previous media session/source.
+The integration saves each participating media player's current volume before ringing and restores it after stop, snooze, or timeout. In all-speakers mode, each speaker is restored to its own previous volume. v0.3 does not attempt to restore the previous media session/source.
 
 ## Initial feature set
 
@@ -330,7 +336,7 @@ These restrictions can be relaxed in later versions without changing the core al
 | v0.4 | Native Assist voice commands and originating-satellite routing |
 | v0.5 | Multiple alarms, query/cancel by time or name, richer recurrence |
 | v0.6 | Skip-next, temporary overrides, pre/post actions, fallback behavior |
-| v0.7 | Dashboard entities/cards and polish |
+| v0.7 | Multi-satellite room endpoints, dashboard entities, diagnostics/repairs, and polish |
 | v1.0 | Stable storage schema, migration support, documented compatibility and release |
 
 The roadmap is provisional and may change during implementation.
