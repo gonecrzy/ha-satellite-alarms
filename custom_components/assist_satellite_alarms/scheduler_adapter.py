@@ -129,11 +129,7 @@ class SchedulerAdapter:
                     "actions": [
                         {
                             "service": f"{DOMAIN}.fire",
-                            "service_data": {
-                                ATTR_ALARM_ID: alarm_id,
-                                ATTR_OCCURRENCE: OCCURRENCE_SNOOZE,
-                                ATTR_OCCURRENCE_ID: occurrence_id,
-                            },
+                            "service_data": {ATTR_ALARM_ID: alarm_id},
                         }
                     ],
                 }
@@ -166,7 +162,11 @@ class SchedulerAdapter:
                     "actions": [
                         {
                             "service": f"{DOMAIN}.fire",
-                            "service_data": {ATTR_ALARM_ID: alarm_id},
+                            "service_data": {
+                                ATTR_ALARM_ID: alarm_id,
+                                ATTR_OCCURRENCE: OCCURRENCE_SNOOZE,
+                                ATTR_OCCURRENCE_ID: occurrence_id,
+                            },
                         }
                     ],
                 }
