@@ -102,9 +102,7 @@ async def test_next_alarm_and_count_entities(hass: HomeAssistant) -> None:
     count_sensor = AlarmCountSensor(hass, entry)
 
     assert isinstance(next_sensor.native_value, datetime)
-    assert next_sensor.native_value == dt_util.parse_datetime(
-        "2099-09-30T06:30:00-04:00"
-    )
+    assert next_sensor.native_value == dt_util.parse_datetime("2099-09-30T06:30:00-04:00")
     assert next_sensor.extra_state_attributes["alarm_id"] == alarm_id
     assert next_sensor.extra_state_attributes["name"] == "Work"
     assert next_sensor.extra_state_attributes["recurrence"] == RECURRENCE_DAILY
