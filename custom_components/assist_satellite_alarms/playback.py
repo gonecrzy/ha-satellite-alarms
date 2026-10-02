@@ -112,6 +112,10 @@ class PlaybackManager:
         """Return alarms waiting to ring on an endpoint."""
         return tuple(self._queued_by_endpoint.get(endpoint_id, ()))
 
+    def clear_queue(self, endpoint_id: str) -> None:
+        """Drop queued alarms for an endpoint without touching schedules."""
+        self._queued_by_endpoint.pop(endpoint_id, None)
+
     def _record(self, alarm_id: str) -> AlarmRecord:
         """Return an alarm record or raise."""
         record = self.registry.get(alarm_id)
