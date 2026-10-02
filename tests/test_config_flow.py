@@ -10,7 +10,6 @@ from custom_components.assist_satellite_alarms.const import (
     CONF_ASSIST_SATELLITE,
     CONF_MEDIA_PLAYER,
     CONF_NAME,
-    DOMAIN,
     SCHEDULER_DOMAIN,
 )
 
