@@ -68,10 +68,7 @@ def _input(
 def _result(**slots: str):
     """Create the small RecognizeResult surface used by VoiceController."""
     return SimpleNamespace(
-        entities={
-            name: SimpleNamespace(value=value, text=value)
-            for name, value in slots.items()
-        }
+        entities={name: SimpleNamespace(value=value, text=value) for name, value in slots.items()}
     )
 
 
@@ -155,9 +152,7 @@ async def test_voice_create_uses_originating_satellite(hass: HomeAssistant) -> N
     records = manager.registry.for_endpoint(entry.entry_id)
     assert len(records) == 1
     assert calls[0][0] == "add"
-    assert calls[0][1]["start_date"] == (
-        dt_util.now().date() + timedelta(days=1)
-    ).isoformat()
+    assert calls[0][1]["start_date"] == (dt_util.now().date() + timedelta(days=1)).isoformat()
     assert calls[0][1]["timeslots"][0]["start"] == "06:30:00"
 
 
@@ -192,9 +187,7 @@ async def test_voice_refuses_unmapped_satellite(hass: HomeAssistant) -> None:
         date_offset=1,
     )
 
-    assert response == (
-        "I couldn't match this voice satellite to a Satellite Alarms room."
-    )
+    assert response == ("I couldn't match this voice satellite to a Satellite Alarms room.")
     assert calls == []
     assert manager.registry.all() == ()
 
@@ -244,9 +237,7 @@ async def test_voice_next_and_cancel_next(hass: HomeAssistant) -> None:
     manager.async_delete.assert_awaited_once_with("abc123")
 
 
-def test_voice_registers_and_unregisters_sentence_groups(
-    hass: HomeAssistant, monkeypatch
-) -> None:
+def test_voice_registers_and_unregisters_sentence_groups(hass: HomeAssistant, monkeypatch) -> None:
     """Voice controller should own and clean up its sentence registrations."""
     unregister_callbacks = [MagicMock() for _ in range(11)]
     agent_manager = MagicMock()
