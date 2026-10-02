@@ -3,54 +3,64 @@
   "config": {
     "step": {
       "user": {
-        "title": "Add alarm endpoint",
-        "description": "Pair an Assist satellite with the media player that should ring alarms in that room. Scheduler Component must already be installed and configured.",
+        "title": "Add room alarm endpoint",
+        "description": "Configure one room with a primary Assist satellite/media-player pair and optional additional pairs. Scheduler Component must already be installed and configured.",
         "data": {
           "name": "Endpoint name",
           "area_id": "Area",
-          "assist_satellite_entity_id": "Assist satellite",
-          "media_player_entity_id": "Alarm media player"
+          "assist_satellite_entity_id": "Primary Assist satellite",
+          "media_player_entity_id": "Primary alarm media player",
+          "additional_assist_satellite_entity_ids": "Additional Assist satellites",
+          "additional_media_player_entity_ids": "Additional alarm media players"
         },
         "data_description": {
           "name": "A friendly room/endpoint name, such as Bedroom.",
           "area_id": "Optional Home Assistant area for this endpoint.",
-          "assist_satellite_entity_id": "The Assist satellite that receives voice commands in this room.",
-          "media_player_entity_id": "The media player that will play this room's alarms."
+          "assist_satellite_entity_id": "The primary Assist satellite for this room.",
+          "media_player_entity_id": "The media player paired with the primary Assist satellite.",
+          "additional_assist_satellite_entity_ids": "Optional additional satellites in the same room. Selection order is paired with the additional media-player selection.",
+          "additional_media_player_entity_ids": "Optional additional media players. Select the same number as additional satellites and in matching order."
         }
       }
     },
     "error": {
       "scheduler_not_ready": "Scheduler Component is not ready. Install it, add the Scheduler integration, and make sure its scheduler.add/edit/remove actions are available.",
-      "entity_not_found": "The selected entity is not currently available."
+      "entity_not_found": "The selected entity is not currently available.",
+      "playback_target_count_mismatch": "Select the same number of additional Assist satellites and additional media players.",
+      "duplicate_satellite": "The same Assist satellite cannot be selected twice in one room.",
+      "duplicate_media_player": "The same media player cannot be selected twice in one room.",
+      "satellite_already_in_room": "One of the selected Assist satellites already belongs to another Satellite Alarms room endpoint."
     },
     "abort": {
-      "already_configured": "This Assist satellite is already configured as a Satellite Alarms endpoint."
+      "already_configured": "This primary Assist satellite is already configured as a Satellite Alarms room endpoint."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Alarm defaults",
-        "description": "Configure playback, snooze, volume, and timeout defaults for this alarm endpoint.",
+        "description": "Configure room playback mode, snooze, target volume, ramp, media, and timeout defaults.",
         "data": {
-          "default_volume": "Default alarm volume",
+          "default_volume": "Target alarm volume",
           "default_snooze_minutes": "Default snooze (minutes)",
           "volume_ramp_enabled": "Enable gradual volume ramp",
           "volume_ramp_start": "Ramp starting volume",
           "volume_ramp_seconds": "Ramp duration (seconds)",
           "max_ring_minutes": "Maximum ringing time (minutes)",
           "default_alarm_media": "Default alarm media",
-          "default_alarm_message": "Default alarm message"
+          "default_alarm_message": "Default alarm message",
+          "playback_mode": "Room playback mode"
         },
         "data_description": {
-          "default_volume": "Volume from 0.0 to 1.0 used when an alarm rings.",
+          "default_volume": "Target volume from 0.0 to 1.0. If volume ramping is enabled, this is the end of the ramp. Previous speaker volume is restored after the alarm.",
           "default_snooze_minutes": "Minutes used when the user says Snooze without specifying a duration.",
           "volume_ramp_enabled": "Gradually increase volume when alarms begin ringing.",
           "volume_ramp_start": "Starting volume for the gradual wake ramp.",
           "volume_ramp_seconds": "How long the volume ramp should take.",
           "max_ring_minutes": "Stop an unanswered alarm after this many minutes.",
           "default_alarm_media": "Optional media URL or Home Assistant media reference. When set, the alarm repeats this media through assist_satellite.announce.",
-          "default_alarm_message": "Spoken fallback used when no alarm media is configured."
+          "default_alarm_message": "Spoken fallback used when no alarm media is configured.",
+          "playback_mode": "Primary only uses the primary pair. All room speakers rings every available pair. Primary with fallback tries the primary pair first, then additional pairs when needed."
         }
       }
     }
