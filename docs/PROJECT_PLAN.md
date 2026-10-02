@@ -86,14 +86,14 @@ A reminder subsystem may be added later, but it should remain conceptually separ
 
 The integration should operate on standard Home Assistant concepts.
 
-Each configured **alarm endpoint** maps:
+Each configured **alarm endpoint** represents one room. It contains a primary Assist satellite/media-player pair and may contain additional paired targets:
 
 ```text
-Assist satellite
+Room / area metadata
       +
-Media player
+Primary Assist satellite <-> primary media player
       +
-Area/room metadata
+Optional additional satellite <-> media-player pairs
       =
 Satellite Alarm Endpoint
 ```
@@ -1062,6 +1062,22 @@ Implemented in the v0.6 development branch:
 Scheduler Component remains the source of truth for the parent recurrence and next-trigger calculation. Temporary override schedules are children of the parent alarm and never replace the recurring parent definition.
 
 ### v0.7 — UI and ecosystem
+
+#### v0.7 room endpoint foundation
+
+Implemented in the v0.7 development branch:
+
+- one config entry represents a room rather than one physical satellite
+- primary satellite/media-player pair remains backward-compatible with existing entries
+- optional additional paired room targets
+- voice commands from any configured room satellite resolve to the same alarm collection
+- playback mode: primary only
+- playback mode: all room speakers
+- playback mode: primary with fallback
+- per-speaker previous volume capture and restoration
+- fallback to another configured target when the primary is unavailable
+- runtime fallback when an Assist announcement fails
+- options wording changed from default alarm volume to target alarm volume
 
 Possible deliverables:
 
