@@ -10,6 +10,7 @@ from custom_components.assist_satellite_alarms.const import (
     DOMAIN,
     RECURRENCE_DAILY,
     RECURRENCE_ONCE,
+    RECURRENCE_SELECTED_DAYS,
     RECURRENCE_WEEKDAYS,
     RECURRENCE_WEEKENDS,
     SCHEDULER_DOMAIN,
@@ -181,3 +182,38 @@ def test_scheduler_entity_lookup_and_next_trigger(hass: HomeAssistant) -> None:
     assert adapter.find_entity_id("missing") is None
     assert adapter.next_trigger(entity_id) == "2026-09-30T06:30:00-04:00"
     assert adapter.next_trigger("switch.missing") is None
+
+
+def test_build_selected_days_schedule_payload() -> None:
+    """Selected weekdays should pass through to Scheduler in canonical order."""
+    payload = SchedulerAdapter.build_schedule_payload(
+        alarm_id="abc123",
+        time="06:30:00",
+        recurrence=RECURRENCE_SELECTED_DAYS,
+        date=None,
+        days=["fri", "mon", "wed"],
+    )
+
+    assert payload["weekdays"] == ["mon", "wed", "fri"]
+    assert payload["repeat_type"] == "repeat"
+
+
+def test_selected_days_schedule_requires_valid_days() -> None:
+    """Selected-day recurrence should reject empty and invalid weekday lists."""
+    with pytest.raises(ValueError, match="at least one weekday"):
+        SchedulerAdapter.build_schedule_payload(
+            alarm_id="abc123",
+            time="06:30:00",
+            recurrence=RECURRENCE_SELECTED_DAYS,
+            date=None,
+            days=[],
+        )
+
+    with pytest.raises(ValueError, match="invalid weekday"):
+        SchedulerAdapter.build_schedule_payload(
+            alarm_id="abc123",
+            time="06:30:00",
+            recurrence=RECURRENCE_SELECTED_DAYS,
+            date=None,
+            days=["mon", "noday"],
+        )
