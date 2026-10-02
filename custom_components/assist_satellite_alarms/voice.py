@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from types import SimpleNamespace
 from typing import Any
 
 from hassil.recognize import RecognizeResult
@@ -144,7 +143,7 @@ class VoiceController:
 
         agent_manager = get_agent_manager(self.hass)
         groups: list[
-            tuple[list[str], Callable[[ConversationInput, RecognizeResult], Any]]
+            tuple[list[str], Callable[[ConversationInput, RecognizeResult], Awaitable[str]]]
         ] = [
             (
                 _ONE_TIME_SENTENCES,
@@ -187,7 +186,7 @@ class VoiceController:
 
     def _create_callback(
         self, recurrence: str, *, date_offset: int | None
-    ) -> Callable[[ConversationInput, RecognizeResult], Any]:
+    ) -> Callable[[ConversationInput, RecognizeResult], Awaitable[str]]:
         """Return a sentence-trigger callback for one recurrence."""
         async def callback(
             user_input: ConversationInput, result: RecognizeResult
@@ -383,7 +382,9 @@ def _parse_number_words(tokens: list[str]) -> int | None:
     if len(tokens) == 1:
         if tokens[0].isdigit():
             return int(tokens[0])
-        return _SMALL_NUMBERS.get(tokens[0]) or _TENS.get(tokens[0])
+        if tokens[0] in _SMALL_NUMBERS:
+            return _SMALL_NUMBERS[tokens[0]]
+        return _TENS.get(tokens[0])
     if len(tokens) == 2 and tokens[0] == "oh":
         return _SMALL_NUMBERS.get(tokens[1])
     if len(tokens) == 2 and tokens[0] in _TENS and tokens[1] in _SMALL_NUMBERS:
@@ -462,7 +463,7 @@ def parse_alarm_time(value: str) -> str:
 
 def parse_snooze_minutes(value: str) -> int:
     """Parse a spoken snooze duration into minutes."""
-    text = _normalize_spoken_text(value)
+    text = _normalize_spoken_text(value).replace(" and ", " ")
     if text in {"half an hour", "half a hour", "half hour"}:
         return 30
 
