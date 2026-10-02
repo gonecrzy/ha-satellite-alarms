@@ -20,9 +20,9 @@ from .const import (
     DATA_ALARM_MANAGER,
     DATA_PLAYBACK_MANAGER,
     DATA_RECONCILED,
-    DATA_VOICE_CONTROLLER,
     DATA_REGISTRY,
     DATA_SCHEDULER_ADAPTER,
+    DATA_VOICE_CONTROLLER,
     DOMAIN,
 )
 from .models import AlarmEndpoint
