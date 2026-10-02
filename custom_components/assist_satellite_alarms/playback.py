@@ -191,9 +191,7 @@ class PlaybackManager:
 
         previous_volume_raw = player_state.attributes.get(ATTR_VOLUME_LEVEL)
         previous_volume = (
-            float(previous_volume_raw)
-            if isinstance(previous_volume_raw, int | float)
-            else None
+            float(previous_volume_raw) if isinstance(previous_volume_raw, int | float) else None
         )
         return ActivePlaybackTarget(
             assist_satellite_entity_id=target.assist_satellite_entity_id,
@@ -602,9 +600,7 @@ class PlaybackManager:
         if not self.hass.services.has_service(MEDIA_PLAYER_DOMAIN, MEDIA_PLAYER_VOLUME_SET):
             raise PlaybackError("media_player.volume_set is not available")
 
-        playback_mode = str(
-            self._option(entry, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE)
-        )
+        playback_mode = str(self._option(entry, CONF_PLAYBACK_MODE, DEFAULT_PLAYBACK_MODE))
         if playback_mode not in {
             PLAYBACK_MODE_PRIMARY,
             PLAYBACK_MODE_ALL,
