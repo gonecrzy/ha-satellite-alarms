@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 from hassil.recognize import RecognizeResult
@@ -70,8 +69,6 @@ _STOP_SENTENCES = [
 _SNOOZE_SENTENCES = [
     "snooze",
     "snooze [the] alarm",
-]
-_SNOOZE_FOR_SENTENCES = [
     "snooze for {duration}",
     "snooze [the] alarm for {duration}",
 ]
@@ -83,6 +80,15 @@ _NEXT_SENTENCES = [
 _CANCEL_SENTENCES = [
     "(cancel|delete|remove) [my] next alarm",
     "(cancel|delete|remove) my alarm",
+]
+
+_CREATE_SENTENCES = [
+    *_ONE_TIME_SENTENCES,
+    *_TODAY_SENTENCES,
+    *_TOMORROW_SENTENCES,
+    *_DAILY_SENTENCES,
+    *_WEEKDAY_SENTENCES,
+    *_WEEKEND_SENTENCES,
 ]
 
 _SMALL_NUMBERS = {
@@ -140,36 +146,10 @@ class VoiceController:
             return
 
         agent_manager = get_agent_manager(self.hass)
-        groups: list[
-            tuple[list[str], Callable[[ConversationInput, RecognizeResult], Awaitable[str]]]
-        ] = [
-            (
-                _ONE_TIME_SENTENCES,
-                self._create_callback(RECURRENCE_ONCE, date_offset=None),
-            ),
-            (
-                _TODAY_SENTENCES,
-                self._create_callback(RECURRENCE_ONCE, date_offset=0),
-            ),
-            (
-                _TOMORROW_SENTENCES,
-                self._create_callback(RECURRENCE_ONCE, date_offset=1),
-            ),
-            (
-                _DAILY_SENTENCES,
-                self._create_callback(RECURRENCE_DAILY, date_offset=None),
-            ),
-            (
-                _WEEKDAY_SENTENCES,
-                self._create_callback(RECURRENCE_WEEKDAYS, date_offset=None),
-            ),
-            (
-                _WEEKEND_SENTENCES,
-                self._create_callback(RECURRENCE_WEEKENDS, date_offset=None),
-            ),
+        groups = [
+            (_CREATE_SENTENCES, self.async_create),
             (_STOP_SENTENCES, self.async_stop),
             (_SNOOZE_SENTENCES, self.async_snooze),
-            (_SNOOZE_FOR_SENTENCES, self.async_snooze_for),
             (_NEXT_SENTENCES, self.async_next_alarm),
             (_CANCEL_SENTENCES, self.async_cancel_next),
         ]
@@ -182,19 +162,34 @@ class VoiceController:
         while self._unregister:
             self._unregister.pop()()
 
-    def _create_callback(
-        self, recurrence: str, *, date_offset: int | None
-    ) -> Callable[[ConversationInput, RecognizeResult], Awaitable[str]]:
-        """Return a sentence-trigger callback for one recurrence."""
-        async def callback(user_input: ConversationInput, result: RecognizeResult) -> str:
-            return await self.async_create_alarm(
-                user_input,
-                result,
-                recurrence=recurrence,
-                date_offset=date_offset,
-            )
+    async def async_create(
+        self, user_input: ConversationInput, result: RecognizeResult
+    ) -> str:
+        """Classify and create an alarm from one deterministic voice trigger."""
+        text = _normalize_spoken_text(user_input.text)
 
-        return callback
+        if "weekday" in text:
+            recurrence = RECURRENCE_WEEKDAYS
+        elif "weekend" in text:
+            recurrence = RECURRENCE_WEEKENDS
+        elif "daily" in text or "every day" in text:
+            recurrence = RECURRENCE_DAILY
+        else:
+            recurrence = RECURRENCE_ONCE
+
+        date_offset: int | None = None
+        if recurrence == RECURRENCE_ONCE:
+            if "tomorrow" in text:
+                date_offset = 1
+            elif "today" in text:
+                date_offset = 0
+
+        return await self.async_create_alarm(
+            user_input,
+            result,
+            recurrence=recurrence,
+            date_offset=date_offset,
+        )
 
     def resolve_endpoint_id(self, user_input: ConversationInput) -> str:
         """Resolve the configured endpoint that owns the originating satellite."""
@@ -283,16 +278,16 @@ class VoiceController:
             return "I couldn't stop the alarm."
         return "Alarm stopped."
 
-    async def async_snooze(self, user_input: ConversationInput, _result: RecognizeResult) -> str:
-        """Snooze using the endpoint default duration."""
-        return await self._async_snooze(user_input, minutes=None)
-
-    async def async_snooze_for(self, user_input: ConversationInput, result: RecognizeResult) -> str:
-        """Snooze using a spoken duration."""
-        try:
-            minutes = parse_snooze_minutes(self._slot(result, "duration"))
-        except VoiceCommandError as err:
-            return str(err)
+    async def async_snooze(
+        self, user_input: ConversationInput, result: RecognizeResult
+    ) -> str:
+        """Snooze using the endpoint default or a spoken duration."""
+        minutes = None
+        if result.entities.get("duration") is not None:
+            try:
+                minutes = parse_snooze_minutes(self._slot(result, "duration"))
+            except VoiceCommandError as err:
+                return str(err)
         return await self._async_snooze(user_input, minutes=minutes)
 
     async def _async_snooze(self, user_input: ConversationInput, *, minutes: int | None) -> str:
