@@ -332,3 +332,81 @@ async def test_unavailable_media_player_rejects_start(hass: HomeAssistant) -> No
         await playback.async_start("alarm-1")
 
     assert playback.active_for_endpoint(entry.entry_id) is None
+
+
+async def test_start_or_queue_runs_same_room_alarms_in_order(hass: HomeAssistant) -> None:
+    """A second due alarm should wait for the active alarm instead of being lost."""
+    entry = _add_endpoint(hass)
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
+    _register_playback_services(hass)
+
+    registry = AlarmRegistry(hass)
+    await registry.async_load()
+    for alarm_id in ("alarm-1", "alarm-2"):
+        await registry.async_upsert(
+            AlarmRecord(
+                alarm_id=alarm_id,
+                endpoint_entry_id=entry.entry_id,
+                name=alarm_id,
+                metadata={
+                    META_TIME: "07:00:00",
+                    META_RECURRENCE: RECURRENCE_DAILY,
+                    META_DATE: None,
+                },
+            )
+        )
+
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+    first, queued = await playback.async_start_or_queue("alarm-1")
+    assert first is not None
+    assert queued is False
+
+    second, queued = await playback.async_start_or_queue("alarm-2")
+    assert second is None
+    assert queued is True
+    assert playback.queued_for_endpoint(entry.entry_id) == ("alarm-2",)
+
+    await asyncio.sleep(0)
+    await playback.async_stop(alarm_id="alarm-1")
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    active = playback.active_for_endpoint(entry.entry_id)
+    assert active is not None
+    assert active.alarm_id == "alarm-2"
+    assert playback.queued_for_endpoint(entry.entry_id) == ()
+
+    await playback.async_stop(alarm_id="alarm-2")
+
+
+async def test_shutdown_drops_queued_alarms(hass: HomeAssistant) -> None:
+    """Shutdown should not start alarms that were waiting in an endpoint queue."""
+    entry = _add_endpoint(hass)
+    hass.states.async_set("media_player.bedroom", "idle", {"volume_level": 0.4})
+    _register_playback_services(hass)
+
+    registry = AlarmRegistry(hass)
+    await registry.async_load()
+    for alarm_id in ("alarm-1", "alarm-2"):
+        await registry.async_upsert(
+            AlarmRecord(
+                alarm_id=alarm_id,
+                endpoint_entry_id=entry.entry_id,
+                name=alarm_id,
+                metadata={
+                    META_TIME: "07:00:00",
+                    META_RECURRENCE: RECURRENCE_DAILY,
+                    META_DATE: None,
+                },
+            )
+        )
+
+    playback = PlaybackManager(hass, registry, SchedulerAdapter(hass))
+    await playback.async_start_or_queue("alarm-1")
+    await playback.async_start_or_queue("alarm-2")
+
+    await playback.async_shutdown()
+    await asyncio.sleep(0)
+
+    assert playback.active_for_endpoint(entry.entry_id) is None
+    assert playback.queued_for_endpoint(entry.entry_id) == ()
