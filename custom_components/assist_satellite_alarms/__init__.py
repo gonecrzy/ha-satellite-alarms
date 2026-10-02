@@ -20,6 +20,7 @@ from .const import (
     DATA_ALARM_MANAGER,
     DATA_PLAYBACK_MANAGER,
     DATA_RECONCILED,
+    DATA_VOICE_CONTROLLER,
     DATA_REGISTRY,
     DATA_SCHEDULER_ADAPTER,
     DOMAIN,
@@ -29,6 +30,7 @@ from .playback import PlaybackManager
 from .registry import AlarmRegistry
 from .scheduler_adapter import SchedulerAdapter, SchedulerNotReadyError
 from .services import async_register_services
+from .voice import VoiceController
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,11 +46,13 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     scheduler = SchedulerAdapter(hass)
     manager = AlarmManager(hass, registry, scheduler)
     playback = PlaybackManager(hass, registry, scheduler)
+    voice = VoiceController(hass, manager, playback)
 
     domain_data[DATA_REGISTRY] = registry
     domain_data[DATA_SCHEDULER_ADAPTER] = scheduler
     domain_data[DATA_ALARM_MANAGER] = manager
     domain_data[DATA_PLAYBACK_MANAGER] = playback
+    domain_data[DATA_VOICE_CONTROLLER] = voice
 
     await hass.http.async_register_static_paths(
         [
@@ -61,8 +65,10 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     )
 
     await async_register_services(hass, manager, playback)
+    voice.register()
 
     async def async_shutdown(_event: Event) -> None:
+        voice.unregister()
         await playback.async_shutdown()
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, async_shutdown)
