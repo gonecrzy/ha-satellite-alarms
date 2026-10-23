@@ -351,12 +351,21 @@ class AlarmManager:
             record = self._record(alarm_id)
             await self._async_remove_override_schedule(record)
 
-            entity_id = self.scheduler.find_entity_id(alarm_id) or record.scheduler_entity_id
-            if entity_id is None:
-                raise AlarmNotFoundError(
-                    f"Scheduler entity for alarm {alarm_id} could not be found"
+            entity_id = self.scheduler.find_entity_id(alarm_id)
+            if entity_id is None and record.scheduler_entity_id:
+                cached_entity_id = str(record.scheduler_entity_id)
+                if self.hass.states.get(cached_entity_id) is not None:
+                    entity_id = cached_entity_id
+
+            if entity_id is not None:
+                await self.scheduler.async_remove_schedule(entity_id)
+            else:
+                _LOGGER.info(
+                    "Removing alarm %s (%s) without Scheduler schedule",
+                    record.alarm_id,
+                    record.name,
                 )
-            await self.scheduler.async_remove_schedule(entity_id)
+
             await self.registry.async_remove(alarm_id)
 
     async def async_set_enabled(self, alarm_id: str, enabled: bool) -> AlarmRecord:
