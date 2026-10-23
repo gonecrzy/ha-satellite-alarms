@@ -215,6 +215,22 @@ pre_actions:
 
 Playback failures emit `assist_satellite_alarms_alarm_failed`. Skip and override lifecycle events are also emitted for automations.
 
+### Robust voice alarm phrases
+
+Satellite Alarms accepts a broader set of deterministic alarm intents so normal phrasing and common speech-to-text substitutions still resolve locally. Examples include:
+
+- `Set alarm for 8 AM`
+- `Set me an alarm at 8 AM`
+- `Set and alarm for 8 AM` (common STT substitution for “an”)
+- `Can you set an alarm for 8 AM`
+- `I need an alarm at 8 AM`
+- `Alarm at 8 AM`
+- `Wake me up at 8 AM`
+- `Make sure I wake up at 8 AM`
+- `Create a work alarm for 8 AM`
+
+Named alarms remain on stricter patterns so articles such as `a` and `an` are not mistaken for alarm names.
+
 ### Per-alarm controls
 
 Each managed alarm also exposes native controls on the room device:
