@@ -235,13 +235,17 @@ Named alarms remain on stricter patterns so articles such as `a` and `an` are no
 
 Each managed alarm also exposes native controls on the room device:
 
+- a compact **Alarm** details sensor showing the actual alarm time
 - an **Enabled** switch backed by Scheduler Component
 - an editable **Time** entity
 - a **Schedule** validation sensor
+- a **Delete <alarm>** button
 
 The validation sensor shows the Satellite Alarms stored time beside Scheduler's configured timeslot and next trigger. It reports `ok`, `disabled`, `missing_schedule`, `scheduler_unavailable`, `time_mismatch`, or `next_trigger_mismatch`.
 
-This makes the room device the primary place to verify which alarms are enabled and whether Satellite Alarms and Scheduler agree on the actual trigger time.
+This makes the room device the primary place to view, enable/disable, edit, validate, and remove alarms without opening Scheduler Component. The room-level Alarm count entity also includes a structured `alarms` attribute with every configured alarm, its recurrence, enabled state, next trigger, and validation status.
+
+Deleting an alarm stops it first if it is actively ringing, removes it from the room queue if necessary, removes its Scheduler schedule when available, and also works for orphaned alarm metadata whose Scheduler switch has already disappeared.
 
 ### Room status entities
 
