@@ -95,7 +95,6 @@ class SatelliteAlarmRoomEntity(Entity):
         self.async_write_ha_state()
 
 
-
 class SatelliteAlarmEntity(SatelliteAlarmRoomEntity):
     """Base entity representing one managed alarm inside a room."""
 
@@ -143,8 +142,7 @@ def setup_dynamic_alarm_entities(
     @callback
     def sync_entities() -> None:
         records = {
-            record.alarm_id: record
-            for record in manager.alarms_for_endpoint(entry.entry_id)
+            record.alarm_id: record for record in manager.alarms_for_endpoint(entry.entry_id)
         }
 
         for alarm_id in set(entities) - set(records):
