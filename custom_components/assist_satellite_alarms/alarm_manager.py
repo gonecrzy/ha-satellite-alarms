@@ -24,6 +24,8 @@ from .const import (
     META_RECURRENCE,
     META_SKIP_NEXT,
     META_SNOOZE_MINUTES,
+    META_SOURCE_TEXT,
+    META_SOURCE_TIME_SLOT,
     META_TIME,
     RECURRENCE_ONCE,
     RECURRENCE_SELECTED_DAYS,
@@ -194,6 +196,8 @@ class AlarmManager:
         pre_actions: list[dict] | None = None,
         post_actions: list[dict] | None = None,
         failure_actions: list[dict] | None = None,
+        source_text: str | None = None,
+        source_time_slot: str | None = None,
     ) -> AlarmRecord:
         """Create an alarm and its Scheduler Component schedule."""
         endpoint = self._endpoint(endpoint_id)
@@ -225,6 +229,8 @@ class AlarmManager:
                 META_DAYS: target_days,
                 META_SKIP_NEXT: False,
                 META_OVERRIDE: None,
+                **({META_SOURCE_TEXT: source_text} if source_text else {}),
+                **({META_SOURCE_TIME_SLOT: source_time_slot} if source_time_slot else {}),
                 **playback_metadata,
             },
         )
