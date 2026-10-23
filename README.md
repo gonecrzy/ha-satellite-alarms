@@ -215,6 +215,18 @@ pre_actions:
 
 Playback failures emit `assist_satellite_alarms_alarm_failed`. Skip and override lifecycle events are also emitted for automations.
 
+### Per-alarm controls
+
+Each managed alarm also exposes native controls on the room device:
+
+- an **Enabled** switch backed by Scheduler Component
+- an editable **Time** entity
+- a **Schedule** validation sensor
+
+The validation sensor shows the Satellite Alarms stored time beside Scheduler's configured timeslot and next trigger. It reports `ok`, `disabled`, `missing_schedule`, `scheduler_unavailable`, `time_mismatch`, or `next_trigger_mismatch`.
+
+This makes the room device the primary place to verify which alarms are enabled and whether Satellite Alarms and Scheduler agree on the actual trigger time.
+
 ### Room status entities
 
 Each configured room exposes standard Home Assistant entities:

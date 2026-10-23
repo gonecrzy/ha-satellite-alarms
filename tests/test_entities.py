@@ -1,8 +1,8 @@
 """Tests for Satellite Alarms room entities."""
 
-from datetime import datetime
+from datetime import datetime, time
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -24,6 +24,7 @@ from custom_components.assist_satellite_alarms.const import (
     META_TIME,
     PLAYBACK_MODE_ALL,
     RECURRENCE_DAILY,
+    SCHEDULER_DOMAIN,
 )
 from custom_components.assist_satellite_alarms.models import AlarmEndpoint, AlarmRecord
 from custom_components.assist_satellite_alarms.playback import (
@@ -36,8 +37,11 @@ from custom_components.assist_satellite_alarms.scheduler_adapter import Schedule
 from custom_components.assist_satellite_alarms.sensor import (
     ActiveAlarmSensor,
     AlarmCountSensor,
+    AlarmScheduleSensor,
     NextAlarmSensor,
 )
+from custom_components.assist_satellite_alarms.switch import AlarmEnabledSwitch
+from custom_components.assist_satellite_alarms.time import AlarmTimeEntity
 
 
 async def _setup_runtime(
@@ -145,3 +149,174 @@ async def test_active_and_ringing_entities(hass: HomeAssistant) -> None:
     assert active_sensor.extra_state_attributes["playback_mode"] == PLAYBACK_MODE_ALL
     assert ringing_sensor.is_on is True
     assert ringing_sensor.extra_state_attributes["active_alarm_id"] == "alarm-1"
+
+
+async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time(
+    hass: HomeAssistant,
+) -> None:
+    """Per-alarm schedule sensor should pinpoint time mismatches."""
+    entry, registry, _manager, _playback, scheduler = await _setup_runtime(hass)
+    local_tz = dt_util.now().tzinfo
+    trigger_8 = datetime(2099, 9, 30, 8, 0, tzinfo=local_tz).isoformat()
+    trigger_9 = datetime(2099, 9, 30, 9, 0, tzinfo=local_tz).isoformat()
+    alarm_id = "alarm-validate"
+    entity_id = scheduler.expected_entity_id(alarm_id)
+    await registry.async_upsert(
+        AlarmRecord(
+            alarm_id=alarm_id,
+            endpoint_entry_id=entry.entry_id,
+            scheduler_entity_id=entity_id,
+            name="Morning",
+            metadata={
+                META_TIME: "08:00:00",
+                META_RECURRENCE: RECURRENCE_DAILY,
+                META_DATE: None,
+                META_DAYS: None,
+                META_SKIP_NEXT: False,
+            },
+        )
+    )
+
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["08:00:00"],
+            "next_trigger": trigger_8,
+        },
+    )
+    sensor = AlarmScheduleSensor(hass, entry, alarm_id)
+
+    assert sensor.native_value == "ok"
+    assert sensor.extra_state_attributes["stored_time"] == "08:00:00"
+    assert sensor.extra_state_attributes["scheduler_time"] == "08:00:00"
+
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["09:00:00"],
+            "next_trigger": trigger_9,
+        },
+    )
+    assert sensor.native_value == "time_mismatch"
+
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["08:00:00"],
+            "next_trigger": trigger_9,
+        },
+    )
+    assert sensor.native_value == "next_trigger_mismatch"
+    assert sensor.extra_state_attributes["next_trigger_local"].startswith("2099-09-30T09:00:00")
+
+
+async def test_alarm_enabled_switch_controls_scheduler_state(
+    hass: HomeAssistant,
+) -> None:
+    """Per-alarm switch should mirror and control the Scheduler switch."""
+    entry, registry, _manager, _playback, scheduler = await _setup_runtime(hass)
+    alarm_id = "alarm-enabled"
+    entity_id = scheduler.expected_entity_id(alarm_id)
+    await registry.async_upsert(
+        AlarmRecord(
+            alarm_id=alarm_id,
+            endpoint_entry_id=entry.entry_id,
+            scheduler_entity_id=entity_id,
+            name="Morning",
+            metadata={META_TIME: "08:00:00", META_RECURRENCE: RECURRENCE_DAILY},
+        )
+    )
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["08:00:00"],
+            "next_trigger": "2099-09-30T08:00:00+00:00",
+        },
+    )
+
+    calls: list[tuple[str, dict]] = []
+
+    async def capture(call: ServiceCall) -> None:
+        calls.append((call.service, dict(call.data)))
+
+    hass.services.async_register("switch", "turn_on", capture)
+    hass.services.async_register("switch", "turn_off", capture)
+
+    alarm_switch = AlarmEnabledSwitch(hass, entry, alarm_id)
+    assert alarm_switch.is_on is True
+
+    await alarm_switch.async_turn_off()
+    assert calls[-1] == ("turn_off", {"entity_id": entity_id})
+
+    hass.states.async_set(
+        entity_id,
+        "off",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["08:00:00"],
+            "next_trigger": "2099-09-30T08:00:00+00:00",
+        },
+    )
+    assert alarm_switch.is_on is False
+
+    await alarm_switch.async_turn_on()
+    assert calls[-1] == ("turn_on", {"entity_id": entity_id})
+
+
+async def test_alarm_time_entity_updates_scheduler_and_metadata(
+    hass: HomeAssistant,
+) -> None:
+    """Editing alarm time should update both registry metadata and Scheduler payload."""
+    entry, registry, manager, _playback, scheduler = await _setup_runtime(hass)
+    alarm_id = "alarm-time"
+    entity_id = scheduler.expected_entity_id(alarm_id)
+    await registry.async_upsert(
+        AlarmRecord(
+            alarm_id=alarm_id,
+            endpoint_entry_id=entry.entry_id,
+            scheduler_entity_id=entity_id,
+            name="Morning",
+            metadata={
+                META_TIME: "08:00:00",
+                META_RECURRENCE: RECURRENCE_DAILY,
+                META_DATE: None,
+                META_DAYS: None,
+                META_SKIP_NEXT: False,
+            },
+        )
+    )
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["08:00:00"],
+            "next_trigger": "2099-09-30T08:00:00+00:00",
+        },
+    )
+
+    calls: list[dict] = []
+
+    async def capture_edit(call: ServiceCall) -> None:
+        calls.append(dict(call.data))
+
+    hass.services.async_register(SCHEDULER_DOMAIN, "add", capture_edit)
+    hass.services.async_register(SCHEDULER_DOMAIN, "edit", capture_edit)
+    hass.services.async_register(SCHEDULER_DOMAIN, "remove", capture_edit)
+
+    alarm_time = AlarmTimeEntity(hass, entry, alarm_id)
+    assert alarm_time.native_value == time(8, 0)
+
+    await alarm_time.async_set_value(time(7, 30))
+
+    assert manager.registry.get(alarm_id).metadata[META_TIME] == "07:30:00"
+    assert calls[-1]["entity_id"] == entity_id
+    assert calls[-1]["timeslots"][0]["start"] == "07:30:00"
