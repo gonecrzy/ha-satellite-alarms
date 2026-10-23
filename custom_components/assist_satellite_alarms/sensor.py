@@ -157,7 +157,6 @@ class ActiveAlarmSensor(SatelliteAlarmRoomEntity, SensorEntity):
         }
 
 
-
 class AlarmScheduleSensor(SatelliteAlarmEntity, SensorEntity):
     """Validate one alarm's stored definition against Scheduler state."""
 
@@ -178,8 +177,7 @@ class AlarmScheduleSensor(SatelliteAlarmEntity, SensorEntity):
         if record is None:
             return None, None
         entity_id = (
-            self.manager.scheduler.find_entity_id(record.alarm_id)
-            or record.scheduler_entity_id
+            self.manager.scheduler.find_entity_id(record.alarm_id) or record.scheduler_entity_id
         )
         return entity_id, self.hass.states.get(entity_id) if entity_id else None
 
@@ -258,9 +256,7 @@ class AlarmScheduleSensor(SatelliteAlarmEntity, SensorEntity):
             "days": record.metadata.get(META_DAYS),
             "scheduler_entity_id": entity_id,
             "scheduler_state": state.state if state else None,
-            "scheduler_next_trigger_raw": (
-                state.attributes.get("next_trigger") if state else None
-            ),
+            "scheduler_next_trigger_raw": (state.attributes.get("next_trigger") if state else None),
             "next_trigger_local": trigger.isoformat() if trigger else None,
             "home_assistant_timezone": self.hass.config.time_zone,
             "skip_next": response.get("skip_next"),
