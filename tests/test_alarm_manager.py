@@ -587,3 +587,31 @@ async def test_reconcile_removes_expired_one_time_alarm_without_schedule(
     assert matched == 0
     assert missing == 0
     assert manager.registry.get(record.alarm_id) is None
+
+
+async def test_delete_orphaned_alarm_without_scheduler_entity(
+    hass: HomeAssistant,
+) -> None:
+    """Deleting an orphaned alarm should remove local metadata without failing."""
+    entry = _add_endpoint(hass)
+    manager, calls = await _manager(hass)
+
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="08:00:00",
+        recurrence=RECURRENCE_DAILY,
+        name="Orphan",
+    )
+    calls.clear()
+
+    record.scheduler_entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
+    await manager.registry.async_upsert(record)
+
+    async def fail_remove(call: ServiceCall) -> None:
+        raise HomeAssistantError("schedule is already gone")
+
+    hass.services.async_register(SCHEDULER_DOMAIN, "remove", fail_remove)
+
+    await manager.async_delete(record.alarm_id)
+
+    assert manager.registry.get(record.alarm_id) is None

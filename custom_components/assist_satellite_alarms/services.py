@@ -246,8 +246,14 @@ async def async_register_services(
     async def async_delete(call: ServiceCall) -> dict[str, object]:
         alarm_id = call.data[ATTR_ALARM_ID]
         try:
+            record = manager.registry.get(alarm_id)
+            if record is not None:
+                active = playback.active_for_endpoint(record.endpoint_entry_id)
+                if active is not None and active.alarm_id == alarm_id:
+                    await playback.async_stop(alarm_id=alarm_id, reason="delete")
+                playback.remove_queued_alarm(alarm_id)
             await manager.async_delete(alarm_id)
-        except (AlarmNotFoundError, EndpointNotFoundError, ValueError) as err:
+        except (AlarmNotFoundError, EndpointNotFoundError, PlaybackError, ValueError) as err:
             raise _service_error(err) from err
         return {"alarm_id": alarm_id, "deleted": True}
 

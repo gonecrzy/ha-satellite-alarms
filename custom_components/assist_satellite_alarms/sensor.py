@@ -45,8 +45,29 @@ async def async_setup_entry(
         hass,
         entry,
         async_add_entities,
+        AlarmDetailsSensor,
+    )
+    setup_dynamic_alarm_entities(
+        hass,
+        entry,
+        async_add_entities,
         AlarmScheduleSensor,
     )
+
+
+def _format_alarm_time(value: object) -> str | None:
+    """Format an alarm clock time for compact display."""
+    parsed = dt_util.parse_time(str(value or ""))
+    if parsed is None:
+        return None
+    hour = parsed.hour % 12 or 12
+    suffix = "AM" if parsed.hour < 12 else "PM"
+    return f"{hour}:{parsed.minute:02d} {suffix}"
+
+
+def _alarm_entity_name(name: str) -> str:
+    """Return a concise entity name for one managed alarm."""
+    return name if name.lower().endswith("alarm") else f"{name} alarm"
 
 
 def _record_attributes(record: AlarmRecord, response: dict[str, object]) -> dict[str, Any]:
@@ -116,11 +137,33 @@ class AlarmCountSensor(SatelliteAlarmRoomEntity, SensorEntity):
         enabled_states = [self.manager.response(record).get("enabled") for record in records]
         enabled_count = sum(state is True for state in enabled_states)
         disabled_count = sum(state is False for state in enabled_states)
+        alarms = []
+        for record in records:
+            response = self.manager.response(record)
+            alarms.append(
+                {
+                    "alarm_id": record.alarm_id,
+                    "name": record.name,
+                    "time": response.get("time"),
+                    "display_time": _format_alarm_time(response.get("time")),
+                    "recurrence": response.get("recurrence"),
+                    "date": response.get("date"),
+                    "days": response.get("days"),
+                    "enabled": response.get("enabled"),
+                    "next_trigger": response.get("next_trigger"),
+                    "schedule_status": AlarmScheduleSensor(
+                        self.hass,
+                        self.entry,
+                        record.alarm_id,
+                    ).native_value,
+                }
+            )
         return {
             "enabled_count": enabled_count,
             "disabled_count": disabled_count,
             "unknown_schedule_count": len(records) - enabled_count - disabled_count,
             "queued_count": len(self.playback.queued_for_endpoint(self.entry.entry_id)),
+            "alarms": alarms,
         }
 
 
@@ -161,6 +204,51 @@ class ActiveAlarmSensor(SatelliteAlarmRoomEntity, SensorEntity):
             "assist_satellites": [target.assist_satellite_entity_id for target in active.targets],
             "media_players": [target.media_player_entity_id for target in active.targets],
             "queued_alarm_ids": list(self.playback.queued_for_endpoint(self.entry.entry_id)),
+        }
+
+
+class AlarmDetailsSensor(SatelliteAlarmEntity, SensorEntity):
+    """Human-readable details for one managed alarm."""
+
+    _attr_icon = "mdi:alarm"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, alarm_id: str) -> None:
+        """Initialize the alarm details sensor."""
+        super().__init__(hass, entry, alarm_id, "details")
+
+    @property
+    def name(self) -> str:
+        """Return the alarm's user-facing entity name."""
+        return _alarm_entity_name(self.alarm_display_name)
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the alarm clock time in a human-readable form."""
+        record = self.record
+        if record is None:
+            return None
+        return _format_alarm_time(record.metadata.get(META_TIME))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose the actual managed alarm definition."""
+        record = self.record
+        if record is None:
+            return None
+
+        response = self.manager.response(record)
+        return {
+            "alarm_id": record.alarm_id,
+            "name": record.name,
+            "enabled": response.get("enabled"),
+            "time": response.get("time"),
+            "recurrence": response.get("recurrence"),
+            "date": response.get("date"),
+            "days": response.get("days"),
+            "next_trigger": response.get("next_trigger"),
+            "scheduler_entity_id": response.get("scheduler_entity_id"),
+            "skip_next": response.get("skip_next"),
+            "override": response.get("override"),
         }
 
 

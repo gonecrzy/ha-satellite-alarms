@@ -10,6 +10,7 @@ from custom_components.assist_satellite_alarms.alarm_manager import AlarmManager
 from custom_components.assist_satellite_alarms.binary_sensor import (
     AlarmRingingBinarySensor,
 )
+from custom_components.assist_satellite_alarms.button import AlarmDeleteButton
 from custom_components.assist_satellite_alarms.const import (
     CONF_ASSIST_SATELLITE,
     CONF_MEDIA_PLAYER,
@@ -37,6 +38,7 @@ from custom_components.assist_satellite_alarms.scheduler_adapter import Schedule
 from custom_components.assist_satellite_alarms.sensor import (
     ActiveAlarmSensor,
     AlarmCountSensor,
+    AlarmDetailsSensor,
     AlarmScheduleSensor,
     NextAlarmSensor,
 )
@@ -320,3 +322,130 @@ async def test_alarm_time_entity_updates_scheduler_and_metadata(
     assert manager.registry.get(alarm_id).metadata[META_TIME] == "07:30:00"
     assert calls[-1]["entity_id"] == entity_id
     assert calls[-1]["timeslots"][0]["start"] == "07:30:00"
+
+
+async def test_alarm_details_and_room_list_show_actual_alarm_definition(
+    hass: HomeAssistant,
+) -> None:
+    """Room UI should expose each alarm and a structured room alarm list."""
+    entry, registry, _manager, _playback, scheduler = await _setup_runtime(hass)
+    alarm_id = "alarm-details"
+    entity_id = scheduler.expected_entity_id(alarm_id)
+    await registry.async_upsert(
+        AlarmRecord(
+            alarm_id=alarm_id,
+            endpoint_entry_id=entry.entry_id,
+            scheduler_entity_id=entity_id,
+            name="School",
+            metadata={
+                META_TIME: "07:15:00",
+                META_RECURRENCE: RECURRENCE_DAILY,
+                META_DATE: None,
+                META_DAYS: None,
+                META_SKIP_NEXT: False,
+            },
+        )
+    )
+    trigger = datetime(2099, 9, 30, 7, 15, tzinfo=dt_util.now().tzinfo).isoformat()
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["07:15:00"],
+            "next_trigger": trigger,
+        },
+    )
+
+    details = AlarmDetailsSensor(hass, entry, alarm_id)
+    count = AlarmCountSensor(hass, entry)
+
+    assert details.name == "School alarm"
+    assert details.native_value == "7:15 AM"
+    assert details.extra_state_attributes["enabled"] is True
+    assert details.extra_state_attributes["recurrence"] == RECURRENCE_DAILY
+
+    alarms = count.extra_state_attributes["alarms"]
+    assert len(alarms) == 1
+    assert alarms[0]["name"] == "School"
+    assert alarms[0]["display_time"] == "7:15 AM"
+    assert alarms[0]["enabled"] is True
+    assert alarms[0]["schedule_status"] == "ok"
+
+
+async def test_alarm_delete_button_removes_alarm_from_home_assistant_management(
+    hass: HomeAssistant,
+) -> None:
+    """Delete button should remove Scheduler schedule and local alarm metadata."""
+    entry, registry, manager, playback, scheduler = await _setup_runtime(hass)
+    alarm_id = "alarm-delete"
+    entity_id = scheduler.expected_entity_id(alarm_id)
+    await registry.async_upsert(
+        AlarmRecord(
+            alarm_id=alarm_id,
+            endpoint_entry_id=entry.entry_id,
+            scheduler_entity_id=entity_id,
+            name="Old alarm",
+            metadata={
+                META_TIME: "08:00:00",
+                META_RECURRENCE: RECURRENCE_DAILY,
+                META_DATE: None,
+                META_DAYS: None,
+                META_SKIP_NEXT: False,
+            },
+        )
+    )
+    hass.states.async_set(
+        entity_id,
+        "on",
+        {
+            "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
+            "timeslots": ["08:00:00"],
+        },
+    )
+
+    calls: list[dict] = []
+
+    async def capture_remove(call: ServiceCall) -> None:
+        calls.append(dict(call.data))
+
+    hass.services.async_register(SCHEDULER_DOMAIN, "add", capture_remove)
+    hass.services.async_register(SCHEDULER_DOMAIN, "edit", capture_remove)
+    hass.services.async_register(SCHEDULER_DOMAIN, "remove", capture_remove)
+
+    button = AlarmDeleteButton(hass, entry, alarm_id)
+    assert button.name == "Delete Old alarm"
+
+    await button.async_press()
+
+    assert manager.registry.get(alarm_id) is None
+    assert calls[-1]["entity_id"] == entity_id
+    assert playback.queued_for_endpoint(entry.entry_id) == ()
+
+
+async def test_alarm_delete_button_removes_orphaned_alarm(
+    hass: HomeAssistant,
+) -> None:
+    """Delete button should also clean an alarm whose Scheduler switch is gone."""
+    entry, registry, manager, _playback, scheduler = await _setup_runtime(hass)
+    alarm_id = "orphan-delete"
+    await registry.async_upsert(
+        AlarmRecord(
+            alarm_id=alarm_id,
+            endpoint_entry_id=entry.entry_id,
+            scheduler_entity_id=scheduler.expected_entity_id(alarm_id),
+            name="Orphan",
+            metadata={
+                META_TIME: "09:00:00",
+                META_RECURRENCE: RECURRENCE_DAILY,
+                META_DATE: None,
+                META_DAYS: None,
+                META_SKIP_NEXT: False,
+            },
+        )
+    )
+
+    button = AlarmDeleteButton(hass, entry, alarm_id)
+    await button.async_press()
+
+    assert manager.registry.get(alarm_id) is None
