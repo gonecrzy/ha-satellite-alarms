@@ -84,6 +84,8 @@ _ROBUST_CREATE_SENTENCES = [
     "I (need|want) alarm (for|at) {time}",
     "I (need|want) an alarm (for|at) {time}",
     "alarm me (for|at) {time}",
+    "alarm (for|at) {time}",
+    "alarm {time}",
     "(can|could|would) you wake me [up] at {time}",
     "please wake me [up] at {time}",
     "get me [up] at {time}",
