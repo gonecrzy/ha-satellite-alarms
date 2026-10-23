@@ -594,7 +594,14 @@ def _clean_alarm_time_slot(value: str) -> str:
     """Remove recurrence/date words that a broad wildcard may capture."""
     text = _normalize_spoken_text(value)
 
-    for prefix in ("tomorrow at ", "today at ", "at ", "for "):
+    for prefix in (
+        "tomorrow at ",
+        "today at ",
+        "go off at ",
+        "go off ",
+        "at ",
+        "for ",
+    ):
         if text.startswith(prefix):
             text = text[len(prefix) :].strip()
             break
