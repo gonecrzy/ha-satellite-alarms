@@ -155,6 +155,7 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
     hass: HomeAssistant,
 ) -> None:
     """Per-alarm schedule sensor should pinpoint time mismatches."""
+    hass.config.set_time_zone("America/New_York")
     entry, registry, _manager, _playback, scheduler = await _setup_runtime(hass)
     alarm_id = "alarm-validate"
     entity_id = scheduler.expected_entity_id(alarm_id)
@@ -305,7 +306,9 @@ async def test_alarm_time_entity_updates_scheduler_and_metadata(
     async def capture_edit(call: ServiceCall) -> None:
         calls.append(dict(call.data))
 
+    hass.services.async_register(SCHEDULER_DOMAIN, "add", capture_edit)
     hass.services.async_register(SCHEDULER_DOMAIN, "edit", capture_edit)
+    hass.services.async_register(SCHEDULER_DOMAIN, "remove", capture_edit)
 
     alarm_time = AlarmTimeEntity(hass, entry, alarm_id)
     assert alarm_time.native_value == time(8, 0)
