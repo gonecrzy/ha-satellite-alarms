@@ -346,13 +346,14 @@ async def test_alarm_details_and_room_list_show_actual_alarm_definition(
             },
         )
     )
+    trigger = datetime(2099, 9, 30, 7, 15, tzinfo=dt_util.now().tzinfo).isoformat()
     hass.states.async_set(
         entity_id,
         "on",
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["07:15:00"],
-            "next_trigger": "2099-09-30T07:15:00+00:00",
+            "next_trigger": trigger,
         },
     )
 
@@ -408,6 +409,8 @@ async def test_alarm_delete_button_removes_alarm_from_home_assistant_management(
     async def capture_remove(call: ServiceCall) -> None:
         calls.append(dict(call.data))
 
+    hass.services.async_register(SCHEDULER_DOMAIN, "add", capture_remove)
+    hass.services.async_register(SCHEDULER_DOMAIN, "edit", capture_remove)
     hass.services.async_register(SCHEDULER_DOMAIN, "remove", capture_remove)
 
     button = AlarmDeleteButton(hass, entry, alarm_id)
