@@ -156,6 +156,23 @@ class PlaybackManager:
         self._queued_by_endpoint.pop(endpoint_id, None)
         async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
 
+    def remove_queued_alarm(self, alarm_id: str) -> bool:
+        """Remove one alarm from any room queue."""
+        removed = False
+        for endpoint_id, queue in list(self._queued_by_endpoint.items()):
+            if alarm_id not in queue:
+                continue
+            self._queued_by_endpoint[endpoint_id] = [
+                queued_id for queued_id in queue if queued_id != alarm_id
+            ]
+            if not self._queued_by_endpoint[endpoint_id]:
+                self._queued_by_endpoint.pop(endpoint_id, None)
+            removed = True
+
+        if removed:
+            async_dispatcher_send(self.hass, SIGNAL_PLAYBACK_UPDATED)
+        return removed
+
     def _record(self, alarm_id: str) -> AlarmRecord:
         """Return an alarm record or raise."""
         record = self.registry.get(alarm_id)
