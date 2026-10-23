@@ -213,9 +213,7 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
         },
     )
     assert sensor.native_value == "next_trigger_mismatch"
-    assert sensor.extra_state_attributes["next_trigger_local"].startswith(
-        "2099-09-30T09:00:00"
-    )
+    assert sensor.extra_state_attributes["next_trigger_local"].startswith("2099-09-30T09:00:00")
 
 
 async def test_alarm_enabled_switch_controls_scheduler_state(
