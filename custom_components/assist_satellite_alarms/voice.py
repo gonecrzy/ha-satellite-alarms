@@ -49,7 +49,7 @@ _WEEKEND_SENTENCES = [
 ]
 _NAMED_CREATE_SENTENCES = [
     "set [an] alarm (called|named) {name} (for|at) {time}",
-    "set [a] {name} alarm (for|at) {time}",
+    "set a {name} alarm (for|at) {time}",
 ]
 _TODAY_SENTENCES = [
     "set [an] alarm (for|at) {time} today",
@@ -256,6 +256,9 @@ class VoiceController:
                 date_offset = 0
 
         name = self._optional_slot(result, "name")
+        if name and name.lower() in {"a", "an", "my", "the"}:
+            name = None
+
         return await self.async_create_alarm(
             user_input,
             result,
@@ -326,7 +329,8 @@ class VoiceController:
         """Create an alarm from a deterministic sentence."""
         try:
             endpoint_id = self.resolve_endpoint_id(user_input)
-            time_value = parse_alarm_time(_clean_alarm_time_slot(self._slot(result, "time")))
+            raw_time_slot = _clean_alarm_time_slot(self._slot(result, "time"))
+            time_value = parse_alarm_time(raw_time_slot)
             date_value = None
             if date_offset is not None:
                 date_value = (dt_util.now().date() + timedelta(days=date_offset)).isoformat()
@@ -338,6 +342,8 @@ class VoiceController:
                 date_value=date_value,
                 days=days,
                 name=name,
+                source_text=user_input.text,
+                source_time_slot=raw_time_slot,
             )
         except (VoiceCommandError, ValueError) as err:
             return str(err)

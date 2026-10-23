@@ -24,6 +24,8 @@ from .const import (
     META_RECURRENCE,
     META_SKIP_NEXT,
     META_SNOOZE_MINUTES,
+    META_SOURCE_TEXT,
+    META_SOURCE_TIME_SLOT,
     META_TIME,
     RECURRENCE_ONCE,
     RECURRENCE_SELECTED_DAYS,
@@ -194,6 +196,8 @@ class AlarmManager:
         pre_actions: list[dict] | None = None,
         post_actions: list[dict] | None = None,
         failure_actions: list[dict] | None = None,
+        source_text: str | None = None,
+        source_time_slot: str | None = None,
     ) -> AlarmRecord:
         """Create an alarm and its Scheduler Component schedule."""
         endpoint = self._endpoint(endpoint_id)
@@ -225,6 +229,8 @@ class AlarmManager:
                 META_DAYS: target_days,
                 META_SKIP_NEXT: False,
                 META_OVERRIDE: None,
+                **({META_SOURCE_TEXT: source_text} if source_text else {}),
+                **({META_SOURCE_TIME_SLOT: source_time_slot} if source_time_slot else {}),
                 **playback_metadata,
             },
         )
@@ -460,6 +466,21 @@ class AlarmManager:
             record.metadata[META_OVERRIDE] = None
             await self.registry.async_upsert(record)
 
+    @staticmethod
+    def _is_expired_one_time(record: AlarmRecord) -> bool:
+        """Return whether a one-time alarm target is already in the past."""
+        if record.metadata.get(META_RECURRENCE) != RECURRENCE_ONCE:
+            return False
+        date_value = record.metadata.get(META_DATE)
+        time_value = record.metadata.get(META_TIME)
+        parsed_date = dt_util.parse_date(str(date_value)) if date_value else None
+        parsed_time = dt_util.parse_time(str(time_value)) if time_value else None
+        if parsed_date is None or parsed_time is None:
+            return False
+        now = dt_util.now()
+        target = datetime.combine(parsed_date, parsed_time, tzinfo=now.tzinfo)
+        return target <= now
+
     async def async_reconcile(self) -> tuple[int, int]:
         """Reconcile cached Scheduler entity IDs using stable alarm tags."""
         matched = 0
@@ -470,6 +491,15 @@ class AlarmManager:
             for record in self.registry.all():
                 entity_id = self.scheduler.find_entity_id(record.alarm_id)
                 if entity_id is None:
+                    if self._is_expired_one_time(record):
+                        _LOGGER.info(
+                            "Removing expired one-time alarm %s (%s) with no Scheduler schedule",
+                            record.alarm_id,
+                            record.name,
+                        )
+                        await self.registry.async_remove(record.alarm_id)
+                        continue
+
                     missing += 1
                     _LOGGER.warning(
                         "Scheduler schedule for alarm %s (%s) was not found",
