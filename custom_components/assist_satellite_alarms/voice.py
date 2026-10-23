@@ -49,7 +49,7 @@ _WEEKEND_SENTENCES = [
 ]
 _NAMED_CREATE_SENTENCES = [
     "set [an] alarm (called|named) {name} (for|at) {time}",
-    "set [a] {name} alarm (for|at) {time}",
+    "set a {name} alarm (for|at) {time}",
 ]
 _TODAY_SENTENCES = [
     "set [an] alarm (for|at) {time} today",
@@ -256,6 +256,9 @@ class VoiceController:
                 date_offset = 0
 
         name = self._optional_slot(result, "name")
+        if name and name.lower() in {"a", "an", "my", "the"}:
+            name = None
+
         return await self.async_create_alarm(
             user_input,
             result,
