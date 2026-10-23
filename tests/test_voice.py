@@ -593,3 +593,39 @@ async def test_voice_create_from_additional_room_satellite(hass: HomeAssistant) 
     records = manager.registry.for_endpoint(entry.entry_id)
     assert len(records) == 1
     assert calls[0][0] == "add"
+
+
+async def test_conversation_generic_alarm_keeps_eight_am_and_no_fake_name(
+    hass: HomeAssistant,
+) -> None:
+    """Generic alarm phrase must keep its time and avoid a fake name."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    entry = _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+    voice.register()
+
+    try:
+        result = await conversation.async_converse(
+            hass=hass,
+            text="set an alarm for 8 AM",
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    assert result.response.speech["plain"]["speech"] == "Alarm set for 8 AM."
+    records = manager.registry.for_endpoint(entry.entry_id)
+    assert len(records) == 1
+    assert records[0].name == "Bedroom alarm"
+    assert records[0].metadata["time"] == "08:00:00"
+    assert records[0].metadata["source_text"] == "set an alarm for 8 AM"
+    assert records[0].metadata["source_time_slot"].lower() == "8 am"
+
+    add_calls = [call for call in calls if call[0] == "add"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1]["timeslots"][0]["start"] == "08:00:00"
