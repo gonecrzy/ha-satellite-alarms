@@ -9,6 +9,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .alarm_manager import AlarmManager
 from .const import (
@@ -18,7 +19,7 @@ from .const import (
     SIGNAL_ALARMS_UPDATED,
     SIGNAL_PLAYBACK_UPDATED,
 )
-from .models import AlarmEndpoint
+from .models import AlarmEndpoint, AlarmRecord
 from .playback import PlaybackManager
 
 
@@ -92,3 +93,80 @@ class SatelliteAlarmRoomEntity(Entity):
         if DOMAIN not in tags:
             return
         self.async_write_ha_state()
+
+
+
+class SatelliteAlarmEntity(SatelliteAlarmRoomEntity):
+    """Base entity representing one managed alarm inside a room."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        alarm_id: str,
+        key: str,
+    ) -> None:
+        """Initialize an alarm-specific entity."""
+        self.alarm_id = alarm_id
+        super().__init__(hass, entry, f"alarm_{alarm_id}_{key}")
+
+    @property
+    def record(self) -> AlarmRecord | None:
+        """Return current alarm metadata."""
+        record = self.manager.registry.get(self.alarm_id)
+        if record is None or record.endpoint_entry_id != self.entry.entry_id:
+            return None
+        return record
+
+    @property
+    def alarm_display_name(self) -> str:
+        """Return the current user-facing alarm name."""
+        record = self.record
+        return (record.name if record and record.name else "Alarm").strip()
+
+    @property
+    def available(self) -> bool:
+        """Return whether this alarm still belongs to the room."""
+        return self.record is not None
+
+
+def setup_dynamic_alarm_entities(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+    factory,
+) -> None:
+    """Keep one dynamic entity type synchronized with the room alarm registry."""
+    manager: AlarmManager = hass.data[DOMAIN][DATA_ALARM_MANAGER]
+    entities: dict[str, Entity] = {}
+
+    @callback
+    def sync_entities() -> None:
+        records = {
+            record.alarm_id: record
+            for record in manager.alarms_for_endpoint(entry.entry_id)
+        }
+
+        for alarm_id in set(entities) - set(records):
+            entity = entities.pop(alarm_id)
+            hass.async_create_task(entity.async_remove(force_remove=True))
+
+        new_entities = []
+        for alarm_id in records:
+            if alarm_id in entities:
+                continue
+            entity = factory(hass, entry, alarm_id)
+            entities[alarm_id] = entity
+            new_entities.append(entity)
+
+        if new_entities:
+            async_add_entities(new_entities)
+
+    sync_entities()
+    entry.async_on_unload(
+        async_dispatcher_connect(
+            hass,
+            SIGNAL_ALARMS_UPDATED,
+            sync_entities,
+        )
+    )
