@@ -156,6 +156,9 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
 ) -> None:
     """Per-alarm schedule sensor should pinpoint time mismatches."""
     entry, registry, _manager, _playback, scheduler = await _setup_runtime(hass)
+    local_tz = dt_util.now().tzinfo
+    trigger_8 = datetime(2099, 9, 30, 8, 0, tzinfo=local_tz).isoformat()
+    trigger_9 = datetime(2099, 9, 30, 9, 0, tzinfo=local_tz).isoformat()
     alarm_id = "alarm-validate"
     entity_id = scheduler.expected_entity_id(alarm_id)
     await registry.async_upsert(
@@ -180,7 +183,7 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["08:00:00"],
-            "next_trigger": "2099-09-30T08:00:00+00:00",
+            "next_trigger": trigger_8,
         },
     )
     sensor = AlarmScheduleSensor(hass, entry, alarm_id)
@@ -195,7 +198,7 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["09:00:00"],
-            "next_trigger": "2099-09-30T09:00:00+00:00",
+            "next_trigger": trigger_9,
         },
     )
     assert sensor.native_value == "time_mismatch"
@@ -206,11 +209,13 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["08:00:00"],
-            "next_trigger": "2099-09-30T09:00:00+00:00",
+            "next_trigger": trigger_9,
         },
     )
     assert sensor.native_value == "next_trigger_mismatch"
-    assert sensor.extra_state_attributes["next_trigger_local"].endswith("+00:00")
+    assert sensor.extra_state_attributes["next_trigger_local"].startswith(
+        "2099-09-30T09:00:00"
+    )
 
 
 async def test_alarm_enabled_switch_controls_scheduler_state(
