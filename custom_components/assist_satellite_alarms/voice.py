@@ -48,8 +48,8 @@ _WEEKEND_SENTENCES = [
     "wake me [up] at {time} weekends",
 ]
 _NAMED_CREATE_SENTENCES = [
-    "set [an] alarm (called|named) {name} (for|at) {time}",
-    "set a {name} alarm (for|at) {time}",
+    "(set|create|make) [an] alarm (called|named) {name} (for|at|to) {time}",
+    "(set|create|make) a {name} alarm (for|at|to) {time}",
 ]
 _TODAY_SENTENCES = [
     "set [an] alarm (for|at) {time} today",
@@ -88,6 +88,13 @@ _ROBUST_CREATE_SENTENCES = [
     "please wake me [up] at {time}",
     "get me [up] at {time}",
     "I need to get up at {time}",
+    "set the alarm (for|at|to) {time}",
+    "set alarm to go off at {time}",
+    "set an alarm to go off at {time}",
+    "have an alarm go off at {time}",
+    "I need to wake [up] at {time}",
+    "make sure I wake [up] at {time}",
+    "make sure I am up at {time}",
     "tomorrow wake me [up] at {time}",
     "today wake me [up] at {time}",
 ]
