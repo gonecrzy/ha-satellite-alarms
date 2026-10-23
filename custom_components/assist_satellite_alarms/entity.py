@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
@@ -9,6 +11,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .alarm_manager import AlarmManager
@@ -133,7 +136,7 @@ def setup_dynamic_alarm_entities(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
-    factory,
+    factory: Callable[[HomeAssistant, ConfigEntry, str], Entity],
 ) -> None:
     """Keep one dynamic entity type synchronized with the room alarm registry."""
     manager: AlarmManager = hass.data[DOMAIN][DATA_ALARM_MANAGER]
@@ -147,7 +150,16 @@ def setup_dynamic_alarm_entities(
 
         for alarm_id in set(entities) - set(records):
             entity = entities.pop(alarm_id)
-            hass.async_create_task(entity.async_remove(force_remove=True))
+
+            async def remove_entity(entity: Entity = entity) -> None:
+                entity_id = entity.entity_id
+                await entity.async_remove(force_remove=True)
+                if entity_id:
+                    entity_registry = er.async_get(hass)
+                    if entity_registry.async_get(entity_id):
+                        entity_registry.async_remove(entity_id)
+
+            hass.async_create_task(remove_entity())
 
         new_entities = []
         for alarm_id in records:
