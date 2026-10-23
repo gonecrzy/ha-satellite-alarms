@@ -12,7 +12,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import META_DATE, META_DAYS, META_RECURRENCE, META_TIME
+from .const import (
+    META_DATE,
+    META_DAYS,
+    META_RECURRENCE,
+    META_SOURCE_TEXT,
+    META_SOURCE_TIME_SLOT,
+    META_TIME,
+)
 from .entity import (
     SatelliteAlarmEntity,
     SatelliteAlarmRoomEntity,
@@ -259,6 +266,8 @@ class AlarmScheduleSensor(SatelliteAlarmEntity, SensorEntity):
             "scheduler_next_trigger_raw": (state.attributes.get("next_trigger") if state else None),
             "next_trigger_local": trigger.isoformat() if trigger else None,
             "home_assistant_timezone": self.hass.config.time_zone,
+            "voice_input": record.metadata.get(META_SOURCE_TEXT),
+            "voice_time_slot": record.metadata.get(META_SOURCE_TIME_SLOT),
             "skip_next": response.get("skip_next"),
             "override": response.get("override"),
         }
