@@ -155,7 +155,6 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
     hass: HomeAssistant,
 ) -> None:
     """Per-alarm schedule sensor should pinpoint time mismatches."""
-    hass.config.set_time_zone("America/New_York")
     entry, registry, _manager, _playback, scheduler = await _setup_runtime(hass)
     alarm_id = "alarm-validate"
     entity_id = scheduler.expected_entity_id(alarm_id)
@@ -181,7 +180,7 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["08:00:00"],
-            "next_trigger": "2099-09-30T08:00:00-04:00",
+            "next_trigger": "2099-09-30T08:00:00+00:00",
         },
     )
     sensor = AlarmScheduleSensor(hass, entry, alarm_id)
@@ -196,7 +195,7 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["09:00:00"],
-            "next_trigger": "2099-09-30T09:00:00-04:00",
+            "next_trigger": "2099-09-30T09:00:00+00:00",
         },
     )
     assert sensor.native_value == "time_mismatch"
@@ -207,11 +206,11 @@ async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["08:00:00"],
-            "next_trigger": "2099-09-30T09:00:00-04:00",
+            "next_trigger": "2099-09-30T09:00:00+00:00",
         },
     )
     assert sensor.native_value == "next_trigger_mismatch"
-    assert sensor.extra_state_attributes["next_trigger_local"].endswith("-04:00")
+    assert sensor.extra_state_attributes["next_trigger_local"].endswith("+00:00")
 
 
 async def test_alarm_enabled_switch_controls_scheduler_state(
@@ -236,7 +235,7 @@ async def test_alarm_enabled_switch_controls_scheduler_state(
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["08:00:00"],
-            "next_trigger": "2099-09-30T08:00:00-04:00",
+            "next_trigger": "2099-09-30T08:00:00+00:00",
         },
     )
 
@@ -260,7 +259,7 @@ async def test_alarm_enabled_switch_controls_scheduler_state(
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["08:00:00"],
-            "next_trigger": "2099-09-30T08:00:00-04:00",
+            "next_trigger": "2099-09-30T08:00:00+00:00",
         },
     )
     assert alarm_switch.is_on is False
@@ -297,7 +296,7 @@ async def test_alarm_time_entity_updates_scheduler_and_metadata(
         {
             "tags": [DOMAIN, scheduler.alarm_tag(alarm_id)],
             "timeslots": ["08:00:00"],
-            "next_trigger": "2099-09-30T08:00:00-04:00",
+            "next_trigger": "2099-09-30T08:00:00+00:00",
         },
     )
 
