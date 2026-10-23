@@ -563,3 +563,27 @@ async def test_override_one_time_alarm_edits_parent_schedule(hass: HomeAssistant
     assert updated.metadata[META_TIME] == "07:00:00"
     assert calls[0][0] == "edit"
     assert calls[0][1]["timeslots"][0]["start"] == "07:00:00"
+
+
+async def test_reconcile_removes_expired_one_time_alarm_without_schedule(
+    hass: HomeAssistant,
+) -> None:
+    """Expired one-time metadata should not remain after its Scheduler schedule is gone."""
+    entry = _add_endpoint(hass)
+    manager, _calls = await _manager(hass)
+
+    record = await manager.async_create(
+        endpoint_id=entry.entry_id,
+        time_value="08:00:00",
+        recurrence=RECURRENCE_ONCE,
+        date_value="2099-09-30",
+        name="Test",
+    )
+    record.metadata[META_DATE] = "2000-01-01"
+    await manager.registry.async_upsert(record)
+
+    matched, missing = await manager.async_reconcile()
+
+    assert matched == 0
+    assert missing == 0
+    assert manager.registry.get(record.alarm_id) is None
