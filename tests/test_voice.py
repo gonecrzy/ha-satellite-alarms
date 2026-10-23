@@ -645,6 +645,8 @@ async def test_conversation_generic_alarm_keeps_eight_am_and_no_fake_name(
         "I need an alarm at 8 AM",
         "I want an alarm for 8 AM",
         "alarm me at 8 AM",
+        "alarm at 8 AM",
+        "alarm 8 AM",
         "please wake me up at 8 AM",
         "get me up at 8 AM",
         "I need to get up at 8 AM",
