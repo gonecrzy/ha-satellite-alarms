@@ -130,6 +130,8 @@ META_SNOOZE_MINUTES: Final = "snooze_minutes"
 META_PRE_ACTIONS: Final = "pre_actions"
 META_POST_ACTIONS: Final = "post_actions"
 META_FAILURE_ACTIONS: Final = "failure_actions"
+META_SOURCE_TEXT: Final = "source_text"
+META_SOURCE_TIME_SLOT: Final = "source_time_slot"
 
 EVENT_ALARM_TRIGGERED: Final = f"{DOMAIN}_alarm_triggered"
 EVENT_ALARM_STOPPED: Final = f"{DOMAIN}_alarm_stopped"
