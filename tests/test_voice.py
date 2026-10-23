@@ -629,3 +629,140 @@ async def test_conversation_generic_alarm_keeps_eight_am_and_no_fake_name(
     add_calls = [call for call in calls if call[0] == "add"]
     assert len(add_calls) == 1
     assert add_calls[0][1]["timeslots"][0]["start"] == "08:00:00"
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "set alarm for 8 AM",
+        "set me an alarm at 8 AM",
+        "set and alarm for 8 AM",
+        "create an alarm at 8 AM",
+        "make me an alarm for 8 AM",
+        "can you set an alarm for 8 AM",
+        "could you set me an alarm at 8 AM",
+        "please set an alarm for 8 AM",
+        "I need an alarm at 8 AM",
+        "I want an alarm for 8 AM",
+        "alarm me at 8 AM",
+        "please wake me up at 8 AM",
+        "get me up at 8 AM",
+        "I need to get up at 8 AM",
+    ],
+)
+async def test_conversation_robust_generic_alarm_phrases(
+    hass: HomeAssistant,
+    phrase: str,
+) -> None:
+    """Natural and common STT variants should all create the same 8 AM alarm."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    entry = _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+    voice.register()
+
+    try:
+        result = await conversation.async_converse(
+            hass=hass,
+            text=phrase,
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    assert result.response.speech["plain"]["speech"] == "Alarm set for 8 AM."
+    records = manager.registry.for_endpoint(entry.entry_id)
+    assert len(records) == 1
+    assert records[0].metadata["time"] == "08:00:00"
+    assert records[0].name == "Bedroom alarm"
+
+    add_calls = [call for call in calls if call[0] == "add"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1]["timeslots"][0]["start"] == "08:00:00"
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected_weekdays"),
+    [
+        ("set alarm for 8 AM every day", ["daily"]),
+        ("create an alarm at 8 AM on weekdays", ["workday"]),
+        ("make me an alarm for 8 AM on weekends", ["weekend"]),
+        (
+            "set me an alarm for 8 AM on Monday Wednesday and Friday",
+            ["mon", "wed", "fri"],
+        ),
+    ],
+)
+async def test_conversation_robust_recurring_alarm_phrases(
+    hass: HomeAssistant,
+    phrase: str,
+    expected_weekdays: list[str],
+) -> None:
+    """Broader create phrases should preserve recurrence classification."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+    voice.register()
+
+    try:
+        await conversation.async_converse(
+            hass=hass,
+            text=phrase,
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    add_calls = [call for call in calls if call[0] == "add"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1]["timeslots"][0]["start"] == "08:00:00"
+    assert add_calls[0][1]["weekdays"] == expected_weekdays
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "set alarm for 8 AM tomorrow",
+        "create an alarm tomorrow at 8 AM",
+        "tomorrow wake me up at 8 AM",
+    ],
+)
+async def test_conversation_robust_tomorrow_alarm_phrases(
+    hass: HomeAssistant,
+    phrase: str,
+) -> None:
+    """Tomorrow phrasing should create a one-time schedule for the next date."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+    voice.register()
+
+    try:
+        await conversation.async_converse(
+            hass=hass,
+            text=phrase,
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    add_calls = [call for call in calls if call[0] == "add"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1]["timeslots"][0]["start"] == "08:00:00"
+    assert add_calls[0][1]["start_date"] == (
+        dt_util.now().date() + timedelta(days=1)
+    ).isoformat()
