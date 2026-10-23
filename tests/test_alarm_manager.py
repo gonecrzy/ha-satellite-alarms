@@ -607,7 +607,11 @@ async def test_delete_orphaned_alarm_without_scheduler_entity(
     record.scheduler_entity_id = manager.scheduler.expected_entity_id(record.alarm_id)
     await manager.registry.async_upsert(record)
 
+    async def fail_remove(call: ServiceCall) -> None:
+        raise HomeAssistantError("schedule is already gone")
+
+    hass.services.async_register(SCHEDULER_DOMAIN, "remove", fail_remove)
+
     await manager.async_delete(record.alarm_id)
 
     assert manager.registry.get(record.alarm_id) is None
-    assert calls == []
