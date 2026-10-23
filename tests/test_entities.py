@@ -151,7 +151,6 @@ async def test_active_and_ringing_entities(hass: HomeAssistant) -> None:
     assert ringing_sensor.extra_state_attributes["active_alarm_id"] == "alarm-1"
 
 
-
 async def test_alarm_schedule_sensor_validates_stored_scheduler_and_trigger_time(
     hass: HomeAssistant,
 ) -> None:
