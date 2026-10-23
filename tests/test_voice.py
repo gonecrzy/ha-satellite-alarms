@@ -772,9 +772,7 @@ async def test_conversation_robust_tomorrow_alarm_phrases(
     add_calls = [call for call in calls if call[0] == "add"]
     assert len(add_calls) == 1
     assert add_calls[0][1]["timeslots"][0]["start"] == "08:00:00"
-    assert add_calls[0][1]["start_date"] == (
-        dt_util.now().date() + timedelta(days=1)
-    ).isoformat()
+    assert add_calls[0][1]["start_date"] == (dt_util.now().date() + timedelta(days=1)).isoformat()
 
 
 @pytest.mark.parametrize(
