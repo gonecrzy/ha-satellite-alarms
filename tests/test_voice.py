@@ -648,6 +648,13 @@ async def test_conversation_generic_alarm_keeps_eight_am_and_no_fake_name(
         "please wake me up at 8 AM",
         "get me up at 8 AM",
         "I need to get up at 8 AM",
+        "set the alarm for 8 AM",
+        "set alarm to go off at 8 AM",
+        "set an alarm to go off at 8 AM",
+        "have an alarm go off at 8 AM",
+        "I need to wake up at 8 AM",
+        "make sure I wake up at 8 AM",
+        "make sure I am up at 8 AM",
     ],
 )
 async def test_conversation_robust_generic_alarm_phrases(
@@ -766,3 +773,46 @@ async def test_conversation_robust_tomorrow_alarm_phrases(
     assert add_calls[0][1]["start_date"] == (
         dt_util.now().date() + timedelta(days=1)
     ).isoformat()
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "create a work alarm for 8 AM",
+        "make a work alarm at 8 AM",
+        "create an alarm named work for 8 AM",
+    ],
+)
+async def test_conversation_robust_named_alarm_phrases(
+    hass: HomeAssistant,
+    phrase: str,
+) -> None:
+    """Named alarms should support create/make wording without confusing articles."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    assert await async_setup_component(hass, "conversation", {})
+    entry = _add_endpoint(hass)
+    manager, playback, calls = await _manager(hass)
+    voice = VoiceController(hass, manager, playback)
+    voice.register()
+
+    try:
+        result = await conversation.async_converse(
+            hass=hass,
+            text=phrase,
+            conversation_id=None,
+            context=Context(),
+            language="en",
+            satellite_id="assist_satellite.bedroom",
+        )
+    finally:
+        voice.unregister()
+
+    assert result.response.speech["plain"]["speech"] == "work alarm set for 8 AM."
+    records = manager.registry.for_endpoint(entry.entry_id)
+    assert len(records) == 1
+    assert records[0].name == "work"
+    assert records[0].metadata["time"] == "08:00:00"
+
+    add_calls = [call for call in calls if call[0] == "add"]
+    assert len(add_calls) == 1
+    assert add_calls[0][1]["timeslots"][0]["start"] == "08:00:00"
