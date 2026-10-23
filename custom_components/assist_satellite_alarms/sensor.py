@@ -7,10 +7,16 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .entity import SatelliteAlarmRoomEntity
+from .const import META_DATE, META_DAYS, META_RECURRENCE, META_TIME
+from .entity import (
+    SatelliteAlarmEntity,
+    SatelliteAlarmRoomEntity,
+    setup_dynamic_alarm_entities,
+)
 from .models import AlarmRecord
 
 
@@ -26,6 +32,12 @@ async def async_setup_entry(
             AlarmCountSensor(hass, entry),
             ActiveAlarmSensor(hass, entry),
         ]
+    )
+    setup_dynamic_alarm_entities(
+        hass,
+        entry,
+        async_add_entities,
+        AlarmScheduleSensor,
     )
 
 
@@ -141,4 +153,115 @@ class ActiveAlarmSensor(SatelliteAlarmRoomEntity, SensorEntity):
             "assist_satellites": [target.assist_satellite_entity_id for target in active.targets],
             "media_players": [target.media_player_entity_id for target in active.targets],
             "queued_alarm_ids": list(self.playback.queued_for_endpoint(self.entry.entry_id)),
+        }
+
+
+
+class AlarmScheduleSensor(SatelliteAlarmEntity, SensorEntity):
+    """Validate one alarm's stored definition against Scheduler state."""
+
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, alarm_id: str) -> None:
+        """Initialize the alarm schedule validation sensor."""
+        super().__init__(hass, entry, alarm_id, "schedule")
+
+    @property
+    def name(self) -> str:
+        """Return the alarm-specific display name."""
+        return f"{self.alarm_display_name} schedule"
+
+    def _scheduler_details(self) -> tuple[str | None, object | None]:
+        """Return Scheduler entity ID and state."""
+        record = self.record
+        if record is None:
+            return None, None
+        entity_id = (
+            self.manager.scheduler.find_entity_id(record.alarm_id)
+            or record.scheduler_entity_id
+        )
+        return entity_id, self.hass.states.get(entity_id) if entity_id else None
+
+    @staticmethod
+    def _scheduler_time(state) -> str | None:
+        """Extract the first Scheduler timeslot start time."""
+        if state is None:
+            return None
+        timeslots = state.attributes.get("timeslots")
+        if not isinstance(timeslots, list) or not timeslots:
+            return None
+        first = str(timeslots[0])
+        return first.split(" - ", 1)[0].strip() or None
+
+    @staticmethod
+    def _local_next_trigger(state) -> datetime | None:
+        """Parse Scheduler's raw next trigger as local Home Assistant time."""
+        if state is None:
+            return None
+        raw = state.attributes.get("next_trigger")
+        if not raw:
+            return None
+        parsed = dt_util.parse_datetime(str(raw))
+        if parsed is None:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.now().tzinfo)
+        return dt_util.as_local(parsed)
+
+    @property
+    def native_value(self) -> str:
+        """Return a concise validation state."""
+        record = self.record
+        if record is None:
+            return "missing_alarm"
+
+        entity_id, state = self._scheduler_details()
+        if entity_id is None or state is None:
+            return "missing_schedule"
+        if state.state == STATE_OFF:
+            return "disabled"
+        if state.state in {STATE_UNAVAILABLE, STATE_UNKNOWN}:
+            return "scheduler_unavailable"
+
+        stored_time = str(record.metadata.get(META_TIME) or "")
+        scheduler_time = self._scheduler_time(state)
+        if scheduler_time and scheduler_time != stored_time:
+            return "time_mismatch"
+
+        trigger = self._local_next_trigger(state)
+        if trigger is not None and trigger.strftime("%H:%M:%S") != stored_time:
+            return "next_trigger_mismatch"
+
+        return "ok"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Show stored and Scheduler values side-by-side for validation."""
+        record = self.record
+        if record is None:
+            return None
+
+        entity_id, state = self._scheduler_details()
+        scheduler_time = self._scheduler_time(state)
+        trigger = self._local_next_trigger(state)
+        response = self.manager.response(record)
+
+        return {
+            "alarm_id": record.alarm_id,
+            "name": record.name,
+            "enabled": response.get("enabled"),
+            "stored_time": record.metadata.get(META_TIME),
+            "scheduler_time": scheduler_time,
+            "recurrence": record.metadata.get(META_RECURRENCE),
+            "date": record.metadata.get(META_DATE),
+            "days": record.metadata.get(META_DAYS),
+            "scheduler_entity_id": entity_id,
+            "scheduler_state": state.state if state else None,
+            "scheduler_next_trigger_raw": (
+                state.attributes.get("next_trigger") if state else None
+            ),
+            "next_trigger_local": trigger.isoformat() if trigger else None,
+            "home_assistant_timezone": self.hass.config.time_zone,
+            "skip_next": response.get("skip_next"),
+            "override": response.get("override"),
         }
