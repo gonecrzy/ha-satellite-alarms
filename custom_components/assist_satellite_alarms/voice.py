@@ -69,6 +69,28 @@ _ONE_TIME_SENTENCES = [
     "wake me [up] at {time}",
     "wake me [up] {time}",
 ]
+_ROBUST_CREATE_SENTENCES = [
+    "(set|create|make) [me] alarm (for|at|to) {time}",
+    "(set|create|make) [me] an alarm (for|at|to) {time}",
+    "(set|create|make) [me] a alarm (for|at|to) {time}",
+    "(set|create|make) [me] and alarm (for|at|to) {time}",
+    "(set|create|make) my alarm (for|at|to) {time}",
+    "(set|create|make) [me] alarm {time}",
+    "(set|create|make) [me] an alarm {time}",
+    "(can|could|would) you (set|create|make) [me] alarm (for|at|to) {time}",
+    "(can|could|would) you (set|create|make) [me] an alarm (for|at|to) {time}",
+    "please (set|create|make) [me] alarm (for|at|to) {time}",
+    "please (set|create|make) [me] an alarm (for|at|to) {time}",
+    "I (need|want) alarm (for|at) {time}",
+    "I (need|want) an alarm (for|at) {time}",
+    "alarm me (for|at) {time}",
+    "(can|could|would) you wake me [up] at {time}",
+    "please wake me [up] at {time}",
+    "get me [up] at {time}",
+    "I need to get up at {time}",
+    "tomorrow wake me [up] at {time}",
+    "today wake me [up] at {time}",
+]
 _STOP_SENTENCES = [
     "(stop|dismiss|turn off) [the] alarm",
     "(stop|dismiss) my alarm",
@@ -124,6 +146,7 @@ _CREATE_SENTENCES = [
     *_TODAY_SENTENCES,
     *_TOMORROW_SENTENCES,
     *_ONE_TIME_SENTENCES,
+    *_ROBUST_CREATE_SENTENCES,
 ]
 
 _SMALL_NUMBERS = {
